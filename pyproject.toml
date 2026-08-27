@@ -28,10 +28,18 @@ codec = [
     # sACN are implemented from scratch (see docs/ARTNET.md, docs/SACN.md).
     "av>=11.0",
 ]
+audio = [
+    # Optional hardware audio output (dmxreplay.audio.SoundDeviceAudioSink,
+    # Phase 7). Requires the system PortAudio library (e.g. `apt install
+    # libportaudio2`) to actually open a device -- NullAudioSink/
+    # WavFileAudioSink need neither this nor a sound card.
+    "sounddevice>=0.4",
+]
 dev = [
     "pytest>=7.4",
     "jsonschema>=4.19",
     "dmxreplay[codec]",
+    "dmxreplay[audio]",
 ]
 
 [project.scripts]

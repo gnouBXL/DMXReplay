@@ -5,11 +5,19 @@ below; the playback loop, master timeline, and network output all live here,
 enabling `dmxreplay-play --headless` without dmxreplay.ui
 (docs/RASPBERRY_PI.md §12/§13).
 
-Scope of this pass: DMX playback and output (Art-Net/sACN), driven by one
-Timeline (docs/TIMING.md §1-§2), with seek/play/pause/stop/loop/speed/fps.
-Audio sync (Phase 7), external video sync (Phase 8), and preview modes
-(Phase 9) are not implemented here -- API.md documents them as later-phase
-additions to this same class, not a reason to stub them now.
+Scope of this pass: DMX playback and output (Art-Net/sACN) plus audio
+playback (Phase 7), all driven by one Timeline (docs/TIMING.md §1-§2), with
+seek/play/pause/stop/loop/speed/fps. External video sync (Phase 8) and
+preview modes (Phase 9) are not implemented here -- API.md documents them
+as later-phase additions to this same class, not a reason to stub them now.
+
+Audio playback is deliberately simple: on play()/seek(), the whole
+already-decoded PCM buffer (from `DMXReplayReader.read_audio_pcm()`) is
+handed to an `AudioSink` from the point matching the current Timeline
+position; the sink's own hardware clock then paces actual sound output.
+Timeline is not disciplined against that hardware clock afterward -- see
+dmxreplay.audio's module docstring for why that's an accepted V1 limitation
+rather than an oversight.
 """
 from __future__ import annotations
 
@@ -17,6 +25,7 @@ import asyncio
 import bisect
 from typing import Literal
 
+from ..audio import AudioSink, NullAudioSink
 from ..clock import ClockProvider, Timeline
 from ..container import DMXReplayReader
 from ..dmx import DMXFrame
@@ -49,17 +58,30 @@ class Player:
         self._task: asyncio.Task | None = None
         self._last_sent_index: int | None = None
 
+        self._audio_sink: AudioSink = NullAudioSink()
+        self._audio_pcm: bytes | None = None
+        self._audio_sample_rate = 0
+        self._audio_channels = 0
+        self._audio_sample_width = 2
+        self._audio_loaded_into_sink = False
+
     # --- Loading -------------------------------------------------------- #
 
     def load(self, dmxr_path: str) -> None:
         with DMXReplayReader(dmxr_path) as reader:
             self._manifest = reader.manifest
             self._frames = list(reader.read_frames())
+            if reader.has_audio:
+                self._audio_pcm, self._audio_sample_rate, self._audio_channels, \
+                    self._audio_sample_width = reader.read_audio_pcm()
+            else:
+                self._audio_pcm = None
         self._timestamps = [f.timestamp_ns for f in self._frames]
         self._duration_ns = self._timestamps[-1] if self._timestamps else 0
         self._fps = self._manifest.fps
         self._timeline.seek(0)
         self._last_sent_index = None
+        self._audio_loaded_into_sink = False
 
     @property
     def manifest(self) -> Manifest | None:
@@ -68,6 +90,32 @@ class Player:
     @property
     def duration_ns(self) -> int:
         return self._duration_ns
+
+    @property
+    def has_audio(self) -> bool:
+        return self._audio_pcm is not None
+
+    def set_audio_sink(self, sink: AudioSink | None) -> None:
+        """Configure where decoded audio is played. None resets to
+        NullAudioSink (the default -- safe/no-op, used automatically for
+        files with no audio track or when nothing else is configured)."""
+        self._audio_sink = sink if sink is not None else NullAudioSink()
+        self._audio_loaded_into_sink = False
+
+    def _ensure_audio_loaded(self) -> None:
+        if self._audio_pcm is not None and not self._audio_loaded_into_sink:
+            self._audio_sink.load(
+                self._audio_pcm, self._audio_sample_rate,
+                self._audio_channels, self._audio_sample_width,
+            )
+            self._audio_loaded_into_sink = True
+
+    def _start_audio_at(self, position_ns: int) -> None:
+        if self._audio_pcm is None:
+            return
+        self._ensure_audio_loaded()
+        start_sample = max(0, int(position_ns * self._audio_sample_rate / 1_000_000_000))
+        self._audio_sink.play(start_sample)
 
     # --- Output configuration -------------------------------------------- #
 
@@ -107,14 +155,17 @@ class Player:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run_loop())
         self._timeline.play(speed=self._speed)
+        self._sync_audio_to_playback_state()
 
     def pause(self) -> None:
         self._timeline.pause()
+        self._audio_sink.stop()
 
     async def stop(self) -> None:
         self._timeline.pause()
         self._timeline.seek(0)
         self._last_sent_index = None
+        self._audio_sink.stop()
         if self._task is not None:
             self._task.cancel()
             self._task = None
@@ -126,11 +177,28 @@ class Player:
         position_ns = max(0, min(position_ns, self._duration_ns))
         self._timeline.seek(position_ns)
         self._last_sent_index = None  # force re-emit at the new position
+        self._sync_audio_to_playback_state()
 
     def set_speed(self, speed: float) -> None:
         self._speed = speed
         if self._timeline.playing:
             self._timeline.play(speed=speed)
+        self._sync_audio_to_playback_state()
+
+    def _sync_audio_to_playback_state(self) -> None:
+        """Re-cue the audio sink to match the current Timeline position
+        whenever play/seek/speed changes it -- one master timeline drives
+        both (docs/TIMING.md §1). AudioSink's contract is forward-only
+        real-time playback (see dmxreplay.audio), so audio only actually
+        plays at speed == 1.0; any other speed (including reverse) stops it
+        rather than producing incorrect/garbled sound -- a documented V1
+        limitation, not an oversight."""
+        if self._audio_pcm is None:
+            return
+        if self._timeline.playing and self._speed == 1.0:
+            self._start_audio_at(self._timeline.position_ns())
+        else:
+            self._audio_sink.stop()
 
     def set_fps(self, fps: float) -> None:
         """Playback sampling rate (docs/TIMING.md §5) -- never alters stored

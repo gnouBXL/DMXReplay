@@ -25,6 +25,9 @@ MANIFEST_ATTACHMENT_NAME = "dmxreplay-manifest.json"
 MANIFEST_ATTACHMENT_MIMETYPE = "application/json"
 
 
+DEFAULT_AUDIO_SAMPLE_RATE = 48000
+
+
 class DMXReplayWriter:
     """Writes one DMXReplay (.dmxr) file. The manifest (SPECIFICATION.md §10)
     must be fully known at construction time -- in particular `encoding`,
@@ -33,9 +36,18 @@ class DMXReplayWriter:
     time (docs/API.md's Recorder.start() happens after universe discovery,
     matching the brief §28 recorder GUI: universes are selected before
     recording starts).
+
+    `audio_path`, if given, is fully re-encoded to AAC and muxed in
+    immediately at construction, before any `write_frame()` call -- like the
+    manifest attachment, an audio *stream* can only be declared before the
+    container header is written, and unlike DMX frames (which arrive live,
+    one at a time, over a whole recording), the audio track needs to already
+    exist as a complete file. V1 has no live audio *capture* path for that
+    reason (docs/TIMING.md); attaching audio to an already-recorded show is
+    what `dmxreplay-convert --add-audio` (docs/API.md §7) is for.
     """
 
-    def __init__(self, path: str, manifest: Manifest) -> None:
+    def __init__(self, path: str, manifest: Manifest, audio_path: str | None = None) -> None:
         spec = ENCODINGS[manifest.encoding]
         if manifest.width != spec["width"]:
             raise ValueError(
@@ -67,15 +79,61 @@ class DMXReplayWriter:
         self._video_stream.pix_fmt = spec["pix_fmt"]
         self._video_stream.codec_context.time_base = STORAGE_TIME_BASE
 
+        # If there's audio, open the source and declare the AAC output
+        # stream (and set manifest.audio) *before* the attachment is added
+        # -- the manifest JSON embedded in the attachment must already
+        # reflect the audio track, since the attachment can't be rewritten
+        # once the header is finalized.
+        audio_in_container = None
+        audio_stream = None
+        audio_layout = None
+        if audio_path is not None:
+            audio_in_container, audio_stream, audio_layout = self._prepare_audio_stream(audio_path)
+
+        # Attachments must be added before the very first mux() call of any
+        # kind (container header is finalized at that point) -- this MUST
+        # come before the audio packets get muxed below. Getting this order
+        # backwards doesn't raise a catchable Python exception; it corrupts
+        # the container header and crashes (hard, native-level abort) later,
+        # e.g. during close()'s video encoder flush -- found by this file's
+        # own tests.
         self._container.add_attachment(
             MANIFEST_ATTACHMENT_NAME,
             MANIFEST_ATTACHMENT_MIMETYPE,
             manifest.to_json().encode("utf-8"),
         )
 
+        if audio_in_container is not None:
+            self._mux_whole_audio_file(audio_in_container, audio_stream, audio_layout)
+
         self._last_pts_ms: int | None = None
         self._frame_count = 0
         self._closed = False
+
+    def _prepare_audio_stream(self, audio_path: str):
+        in_container = av.open(audio_path)
+        in_stream = in_container.streams.audio[0]
+        channels = 2 if in_stream.channels >= 2 else 1
+        layout = "stereo" if channels == 2 else "mono"
+
+        audio_stream = self._container.add_stream("aac", rate=DEFAULT_AUDIO_SAMPLE_RATE)
+        audio_stream.codec_context.layout = layout
+
+        self._manifest.audio = {
+            "codec": "aac", "sample_rate": DEFAULT_AUDIO_SAMPLE_RATE, "channels": channels,
+        }
+        return in_container, audio_stream, layout
+
+    def _mux_whole_audio_file(self, in_container, audio_stream, layout: str) -> None:
+        in_stream = in_container.streams.audio[0]
+        resampler = av.AudioResampler(format="fltp", layout=layout, rate=DEFAULT_AUDIO_SAMPLE_RATE)
+        for frame in in_container.decode(in_stream):
+            for resampled in resampler.resample(frame):
+                for packet in audio_stream.encode(resampled):
+                    self._container.mux(packet)
+        for packet in audio_stream.encode():  # flush
+            self._container.mux(packet)
+        in_container.close()
 
     def write_frame(self, frame: DMXFrame) -> None:
         """Encode and mux one DMXFrame. Timestamps are quantized to whole

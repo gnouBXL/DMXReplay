@@ -237,18 +237,29 @@ for a Pi's microSD (even the slow end, ~20 MB/s, is ~13× the ≈0.255 MB/s read
 needed) or a USB3/NVMe SSD (hundreds of times the required rate). Storage is not a V1
 constraint at any measured or estimated scale.
 
-## 8. Audio and external video: architectural readiness (not yet implemented, not yet benchmarked)
+## 8. Audio and external video: architectural readiness
 
-Phases 7 (audio sync) and 8 (external video sync) don't exist in code yet, so nothing
-here is measured — this section is a design-level check that the *architecture* chosen
-so far doesn't foreclose the Pi target, per the brief's instruction to treat Pi as a
-target for the full DMX+audio+video scenario, not DMX alone.
+**Update, Phase 7:** audio sync is now implemented (`dmxreplay.audio`,
+`DMXReplayWriter`/`Reader` audio muxing, `Player.set_audio_sink()`) — see
+`CHANGELOG.md`'s Phase 7 entry. AAC decode cost is unchanged from the prediction below
+(cheap; not separately re-measured here since nothing about it is Pi-specific). What's
+still true and still open: this project's own development environment has **no audio
+output device at all** (confirmed via `sounddevice.query_devices()` returning empty —
+same sandbox that has no Raspberry Pi), so `SoundDeviceAudioSink` is real, tested code
+for its error-handling path, not something verified to produce correct sound on this
+machine *or* on a Pi. That verification needs physical audio hardware either way — see
+§10. External video (Phase 8) is still unimplemented; the paragraphs below remain a
+design-level check, not a benchmark, exactly as originally written.
+
+Original text, still accurate for the video half and for the reasoning behind both:
 
 - **Master clock**: already designed (`docs/TIMING.md`) as one `Timeline`/`ClockProvider`
   driving DMX, audio, and video from a single source of truth (§11 below confirms this
   wasn't touched by this analysis). Adding audio/video subsystems means giving them a
   `position_ns()` to poll, not adding their own clocks — the design that avoids drift
-  was already the design, before Pi was a stated requirement.
+  was already the design, before Pi was a stated requirement. Phase 7 confirms this
+  held in practice: `Player` re-cues audio against `Timeline.position_ns()` on every
+  play/seek/speed change rather than running a separate clock.
 - **Audio**: AAC decode (`docs/CONTAINER.md` §3) is a solved, cheap problem on any
   Pi — Pi 4/5 both decode AAC comfortably in software (this is a much smaller ask than
   the video decode discussion in wide use for Pi-based media players); no red flags.

@@ -333,7 +333,14 @@ themselves (§13).
 
 - If present, the audio track (AAC, recommended — brief §18) and the DMX video track
   share **one master timeline** (see [TIMING.md](TIMING.md), [API.md](API.md)'s
-  `Clock` interface). There is no independent audio clock.
+  `Clock` interface). There is no independent audio clock: `Player` starts/stops/
+  re-cues audio playback (via an `AudioSink`, [API.md](API.md) §Audio) at the same
+  `Timeline` position it drives DMX output from, whenever play/seek/speed changes it.
+  Once playback is running, the audio sink's own hardware clock is what actually paces
+  sound output — V1 does not discipline `Timeline` against that hardware clock
+  afterward (a documented limitation, not an independent second clock: both still
+  *start* from the one master timeline's position, they just aren't continuously
+  re-synced against each other during playback).
 - An external, conventional video file (e.g. `Show.mp4`, alongside `Show.dmxr`) is
   **not** part of the DMXReplay container in V1 (brief §24/§39) — it is synchronized by
   the player against the same master timeline as a third track, driven purely by

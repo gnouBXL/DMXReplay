@@ -8,10 +8,9 @@ consumers of this API, not the other way around. This is what makes `dmxreplay-p
 ([docs/RASPBERRY_PI.md](RASPBERRY_PI.md) §12), and keeps TouchDesigner or any other
 future host able to embed the engine directly (brief §52).
 
-Status: **§1–§7 below are all implemented (Phases 1–6)**, except `dmxreplay.ui` (no
-GUI yet — the engine and CLI don't need it) and `dmxreplay-convert` (§7, stubbed,
-scope not yet defined). Audio (§Phase 7), external video (§Phase 8), and preview
-modes (§Phase 9) are the remaining engine work, layered onto `Player` without
+Status: **§1–§7 below are all implemented (Phases 1–7)**, except `dmxreplay.ui` (no
+GUI yet — the engine and CLI don't need it). External video (Phase 8) and preview
+modes (Phase 9) are the remaining engine work, layered onto `Player` without
 changing anything documented here.
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
@@ -165,7 +164,7 @@ box in the brief's architecture diagram, brief §49), which `start()` freezes in
 only ever calls these methods and reads `RowInfo`/`RecorderStatus`; it never touches
 the network or encoder directly. `dmxreplay-record` (§7) is a thin wrapper over this.
 
-## 5. `dmxreplay.player` — implemented (Phase 6, DMX-only)
+## 5. `dmxreplay.player` — implemented (Phase 6-7: DMX + audio)
 
 ```python
 class Player:
@@ -176,6 +175,7 @@ class Player:
         destination_ip: str | None = None, port: int | None = None, priority: int = 100,
     ) -> None: ...
     def set_universe_mapping(self, mapping: dict[int, int] | None) -> None: ...  # output remap, brief §34, never mutates the loaded file
+    def set_audio_sink(self, sink: AudioSink | None) -> None: ...  # None -> NullAudioSink (default)
     async def play(self, speed: float | None = None) -> None: ...
     def pause(self) -> None: ...
     async def stop(self) -> None: ...
@@ -186,19 +186,44 @@ class Player:
     manifest: Manifest | None                                # property
     duration_ns: int                                          # property
     position_ns: int                                           # property
+    has_audio: bool                                             # property
 ```
 
 `Player` decodes every frame via `DMXReplayReader` (§3.6) at `load()` time, drives an
 internal `Timeline` (§2), and on every tick (rate = `set_fps()`, default the file's own
 nominal `fps`) emits the sample-and-hold-current frame (SPECIFICATION.md §13) via
 `ArtNetSender`/`SACNSender` (§3.5) if it has changed since the last tick. Loading
-decodes the whole file into memory up front (simple and correct; a future streaming/
-seek-on-demand mode is a documented candidate optimization, not yet needed at V1
-scale — see `docs/RASPBERRY_PI.md` §9). `set_preview_mode()` (brief §36) and
-`external_video_path` (brief §19, Phase 8) are **not yet implemented** — left off
-this class until their phases land rather than stubbed. `dmxreplay-play` (§7) is a
-thin wrapper over this; audio (Phase 7) and external video (Phase 8) will drive their
-own output from the same `Timeline` this class already uses, per `docs/TIMING.md` §1.
+decodes the whole file (DMX **and** audio, if present) into memory up front (simple and
+correct; a future streaming/seek-on-demand mode is a documented candidate optimization,
+not yet needed at V1 scale — see `docs/RASPBERRY_PI.md` §9). Audio playback
+(`play()`/`seek()`/`set_speed()`) re-cues the configured `AudioSink` (below) to match
+the `Timeline`'s position — one master timeline drives both, never an independent audio
+clock (`docs/TIMING.md` §1, `SPECIFICATION.md` §14). `AudioSink` is forward-only, so
+non-1.0 speeds (including reverse) stop audio rather than play it incorrectly.
+`set_preview_mode()` (brief §36) and `external_video_path` (brief §19, Phase 8) are
+**not yet implemented** — left off this class until their phases land rather than
+stubbed. `dmxreplay-play` (§7) is a thin wrapper over this.
+
+### `dmxreplay.audio` — implemented (Phase 7)
+
+```python
+class AudioSink(Protocol):
+    def load(self, pcm_data: bytes, sample_rate: int, channels: int, sample_width: int) -> None: ...
+    def play(self, start_sample: int = 0) -> None: ...
+    def stop(self) -> None: ...
+
+class NullAudioSink(AudioSink): ...          # default; always available, does nothing
+class WavFileAudioSink(AudioSink): ...       # writes decoded PCM to a .wav file; for headless verification/tests
+class SoundDeviceAudioSink(AudioSink): ...   # real hardware output via the optional `sounddevice` dependency
+```
+
+`SoundDeviceAudioSink.play()` raises `AudioDeviceUnavailableError` up front if no
+output device is present, rather than failing deep inside PortAudio. **Not exercised
+against real audio hardware in this project's own development environment** — see
+`docs/RASPBERRY_PI.md`'s audio note; the sync *trigger logic* (Player calling
+load/play/stop at the right times with the right sample offsets) is real-tested against
+this protocol via a recording test double, which is a meaningfully different claim from
+"verified to produce correct sound," and this document doesn't conflate the two.
 
 ## 6. `dmxreplay.clock.ClockProvider` — future timecode sources (documented, not implemented)
 
@@ -215,7 +240,7 @@ class InternalClockProvider(ClockProvider): ...   # V1's only implementation
 later should not require changing `Player`, `Recorder`, or the DMX/audio/video output
 paths, only supplying a different `ClockProvider` to `Timeline`.
 
-## 7. CLI surface — implemented (Phases 5-6), except `-convert`
+## 7. CLI surface — implemented (Phases 5-7)
 
 Thin wrappers over §4/§5, per brief §51 (`src/dmxreplay/cli/{record,play,info,convert}.py`):
 
@@ -223,9 +248,15 @@ Thin wrappers over §4/§5, per brief §51 (`src/dmxreplay/cli/{record,play,info
 dmxreplay-record --input artnet --interface 0.0.0.0 --fps 30 --output show.dmxr
 dmxreplay-play show.dmxr --output artnet --destination 192.168.1.100 --loop
 dmxreplay-info show.dmxr [--frames]
-dmxreplay-convert   # stub -- prints "not implemented yet" and exits 1; brief §51
-                     # lists it but never specifies what conversions it should do
+dmxreplay-convert show.dmxr show_with_audio.dmxr --add-audio song.wav
 ```
+
+`dmxreplay-convert` implements exactly one operation, `--add-audio` (`docs/CONTAINER.md`
+§3 explains why: an audio track can only be muxed in from a complete source file, at
+container-construction time, so "attach audio after the fact" is naturally a convert
+operation rather than something `Recorder` can do mid-recording). Other conversions
+brief §51 gestures at (re-encoding, universe remapping into a new file, fps change)
+remain unimplemented — never specified, so not guessed at.
 
 `dmxreplay-record` runs a discovery phase (`--discovery-seconds`, default 3s) before
 freezing the universe set and starting to write, matching the brief §28 recorder GUI's

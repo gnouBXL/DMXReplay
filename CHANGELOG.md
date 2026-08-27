@@ -6,6 +6,42 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 7: Audio synchronization
+- `src/dmxreplay/audio`: `AudioSink` protocol, `NullAudioSink` (default, no-op),
+  `WavFileAudioSink` (writes decoded PCM to a .wav -- for headless verification and
+  tests, no hardware needed), `SoundDeviceAudioSink` (real output via the optional
+  `sounddevice`/PortAudio dependency; raises `AudioDeviceUnavailableError` up front
+  when no device is present rather than failing deep inside PortAudio). No audio
+  hardware exists in this project's development environment, so `SoundDeviceAudioSink`
+  is real code, real-tested for correct error behavior in that environment, but not
+  verified against actual sound output -- documented as such rather than glossed over.
+- `DMXReplayWriter` gained an optional `audio_path` constructor parameter: the whole
+  source audio file is decoded, resampled, and re-encoded to AAC (48kHz, mono/stereo),
+  and muxed in immediately. `DMXReplayReader` gained `has_audio` and
+  `read_audio_pcm()`.
+- `Player` gained `set_audio_sink()` and `has_audio`; `play()`/`seek()`/`set_speed()`
+  now re-cue the configured sink to match the Timeline's position, so DMX and audio
+  always start from the same instant (one master timeline, `docs/TIMING.md` §1).
+  Non-1.0 speeds (including reverse) stop audio instead of playing it incorrectly,
+  since `AudioSink` is forward-only by contract.
+- `dmxreplay-convert --add-audio`: the one well-scoped conversion this CLI needed --
+  attach an audio file to an already-recorded `.dmxr` (a live `Recorder` can't do this
+  mid-recording, since an audio track can only be declared from a complete source file
+  before the container header is written -- see `docs/CONTAINER.md` §3).
+- **Two real bugs found by the new tests, not by inspection**, both in
+  `DMXReplayWriter`/`DMXReplayReader`: (1) adding the manifest attachment *after*
+  muxing the first audio packets corrupts the Matroska header and crashes the process
+  (a native abort, not a catchable Python exception) later during encoder flush --
+  fixed by always adding the attachment before any packet of any kind is muxed; (2)
+  `DMXReplayReader` decoding the audio track first, through the same container object
+  `read_frames()` uses, silently consumed the shared demuxer cursor all the way to
+  EOF, so a subsequent `read_frames()` call found 0 frames instead of what was
+  actually written -- fixed by decoding audio through a second, independent
+  `av.open()` of the same file.
+- `docs/CONTAINER.md`, `docs/SPECIFICATION.md` §14, and `docs/API.md` updated with
+  the audio track's real constraints (attachment-ordering rule, AAC encoder priming
+  delay, the "audio can only be attached from a complete file" timing constraint).
+
 ### Added — Phase 5/6: Recorder and Player core engines + CLI (headless)
 - `src/dmxreplay/dmx/engine.py` (`DMXEngine`): live, protocol-agnostic per-universe
   state aggregator -- the "DMX Engine" box in the brief's architecture diagram.
