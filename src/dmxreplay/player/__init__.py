@@ -1,1 +1,4 @@
-"""Player engine (Phase 6-9). Not yet implemented. Target API: docs/API.md §5."""
+"""Player core engine (Phase 6). See docs/API.md §5."""
+from .player import Player
+
+__all__ = ["Player"]

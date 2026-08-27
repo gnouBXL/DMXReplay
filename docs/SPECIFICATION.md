@@ -237,7 +237,7 @@ The manifest is a single JSON document, embedded as a named Matroska attachment 
 | `width`, `height` | integer | Video frame dimensions, redundant with the container's own track headers but required here so a manifest-only parse (no video decode) can still validate shape. |
 | `universes` | array of objects (see 10.2) | Row → source-address mapping (§7). |
 | `created_at` | string, RFC 3339 UTC timestamp | Recording creation time. |
-| `duration_seconds` | number | Total recording duration. |
+| `duration_seconds` | number | Total recording duration. For a file produced by a live/streaming recorder, this MAY be a best-effort estimate rather than exact (the true duration is only known once recording stops, but the manifest attachment is written once, at container-header time — see `docs/CONTAINER.md` §4 — before that). The **authoritative** duration is always derivable by any reader from the video track's own last-frame timestamp; a reader MUST NOT treat `duration_seconds` as more precise than that. |
 | `recorder` | object `{name, version}` | Producing software identification. |
 
 ### 10.2 `universes[]` entry fields

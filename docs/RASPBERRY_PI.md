@@ -301,10 +301,11 @@ Explicitly not claimed as validated by this document:
 
 ## 11. Validation test: Art-Net → Recorder → `.dmxr` → Player → Art-Net
 
-Added: `tests/test_end_to_end_artnet_pipeline.py`. The dedicated `Recorder`/`Player`
-orchestration classes (`docs/API.md` §4–§5) are Phase 5/6 work and don't exist yet, but
-the data path they will wrap is fully implemented now, so this test exercises it
-directly and for real (nothing mocked):
+Added: `tests/test_end_to_end_artnet_pipeline.py`. At the time this was written, the
+dedicated `Recorder`/`Player` orchestration classes (`docs/API.md` §4–§5) were Phase
+5/6 work that didn't exist yet, so this test exercised the data path they'd wrap
+directly (nothing mocked, but using `DMXReplayWriter`/`DMXReplayReader` and raw
+`ArtNetListener`/`ArtNetSender` in place of `Recorder`/`Player`):
 
 ```
 ArtNetSender (simulated console)
@@ -318,13 +319,24 @@ ArtNetSender (player output)
     --UDP-->  ArtNetListener  (simulated lighting rig)
 ```
 
-It asserts the DMX values the simulated lighting rig receives are **byte-for-byte
-identical** to what the simulated console originally sent, across a sparse set of
-Port-Addresses (exercising `docs/SPECIFICATION.md` §7's row-packing too). Passing on
-this reference machine now (`pytest tests/test_end_to_end_artnet_pipeline.py`).
-**Reproducing this on physical Raspberry Pi 4/5 hardware is listed in §10** as an
-open item — the test is written to run identically there (`pytest` over loopback UDP,
-no platform-specific code), but this session has no such hardware to run it on.
+**Update, Phase 5/6:** `Recorder` and `Player` now exist, so
+`tests/test_end_to_end_recorder_player.py` was added alongside the original test,
+running the *same* validation shape through the *actual* classes instead of the
+primitives standing in for them:
+
+```
+ArtNetSender (simulated console) --UDP--> Recorder --> .dmxr --> Player --UDP--> ArtNetListener (simulated rig)
+```
+
+It confirms no value is fabricated in transit and that each universe's final
+state after playback exactly matches the last value the simulated console sent (the
+right invariant here, since the recorder commits one frame per received packet —
+`docs/TIMING.md` §4.1 — so a strict per-packet value-for-value replay isn't the
+correct comparison once two universes interleave; see the test's own comments).
+Both tests pass on this reference machine now. **Reproducing either on physical
+Raspberry Pi 4/5 hardware is listed in §10** as an open item — both are written to
+run identically there (`pytest` over loopback UDP, no platform-specific code), but
+this session has no such hardware to run them on.
 
 ## 12. Architecture separation check (brief's diagram)
 
@@ -353,37 +365,45 @@ touching `dmxreplay.ui` at all — the GUI was never load-bearing for the engine
 directly satisfies "the player must be able to function without a GUI on Linux/Raspberry
 Pi."
 
-One naming note, not a structural gap: the brief's architecture diagram shows a
+**Update, Phase 5:** the naming note below has been resolved — `dmxreplay.dmx.DMXEngine`
+now exists (`src/dmxreplay/dmx/engine.py`), feeding `Recorder` exactly as described.
+Original note, kept for the record: the brief's architecture diagram shows a
 standalone "DMX Engine" box between the network layer and Art-Net/sACN I/O — a live,
-protocol-agnostic aggregator of current per-universe state. That box doesn't exist as
-its own module yet; today, each of `ArtNetListener`/`SACNListener` tracks its own
+protocol-agnostic aggregator of current per-universe state. That box didn't exist as
+its own module yet; each of `ArtNetListener`/`SACNListener` tracked its own
 per-universe live status independently (`docs/API.md` §3.5). Unifying that into one
-shared "DMX Engine" that both protocols feed is `Recorder`-level work (`docs/API.md`
-§4, Phase 5) — the right layer for it, since only the Recorder needs to merge multiple
-simultaneous sources into one committed timeline. Not a Pi-specific concern; noted here
-only because this section was explicitly asked to check the diagram.
+shared "DMX Engine" that both protocols feed was identified as `Recorder`-level work
+(`docs/API.md` §4, Phase 5) — the right layer for it, since only the Recorder needs to
+merge multiple simultaneous sources into one committed timeline.
 
-## 13. Headless mode — proposed interface (not implemented yet)
+## 13. Headless mode — implemented (Phase 6)
 
-To turn a Pi into a standalone player per the brief, `dmxreplay-play` (`docs/API.md`
-§7) needs a `--headless` mode. Proposed shape, for
-Phase 6 (Player) to implement — **not built in this pass**, shown here so the CLI
-surface is designed with Pi/headless use in mind from the start rather than retrofitted:
+**Update, Phase 6:** `dmxreplay-play --headless` is now real (`src/dmxreplay/cli/play.py`).
+Original proposal, kept for the record, and what was actually built against it:
 
 ```bash
 dmxreplay-play --headless show.dmxr \
-  --output artnet --interface eth0 --destination 192.168.1.100 \
-  --loop --autoplay --fps 30
+  --output artnet --interface eth0 --destination 192.168.1.100 --loop --fps 30
 ```
 
-This maps directly onto the already-designed `Player` target API (`docs/API.md` §5):
-`load()`, `set_output()`, `set_loop()`, `set_fps()`, `play()`. No new engine-level
-interface is implied — `--headless` only means "don't construct `dmxreplay.ui`," which
-§12 confirms is already possible. Interactive control (seek/pause/stop while running
-headless) needs *some* control surface (brief §8 lists play/pause/stop/loop/seek/FPS as
-required headless capabilities) — proposed as a small local control mechanism (e.g. a
-Unix domain socket or a minimal loopback-only HTTP endpoint) to be designed in Phase 6
-alongside `Player` itself, not decided prematurely here.
+This maps directly onto the `Player` API (`docs/API.md` §5): `load()`, `set_output()`,
+`set_loop()`, `set_fps()`, `play()`. As predicted, no new engine-level interface was
+needed — `--headless` is accepted but is actually a no-op, since `dmxreplay-play` never
+imported `dmxreplay.ui` in the first place (§12's finding held). One thing the original
+proposal got only half right: it suggested `--autoplay` as a separate flag from
+`--headless`; the shipped CLI simplified this away since there is no "loaded but
+waiting for a command" alternative yet (see the next paragraph) — `dmxreplay-play`
+always starts playing once loaded, so `--autoplay` wasn't added as a distinct flag.
+
+**Still open, as predicted:** interactive control (seek/pause/stop while a headless
+process is already running) needs *some* control surface (brief §8 lists
+play/pause/stop/loop/seek/FPS as required headless capabilities), and that surface is
+still not built — `dmxreplay-play` today loads, configures output, and plays straight
+through until the file ends (non-looping) or it's interrupted (looping), with no way to
+send it a new command mid-run. A small local control mechanism (Unix domain socket, or
+a minimal loopback-only HTTP endpoint) remains the proposed shape, deliberately still
+not decided/built, consistent with not designing a remote-control protocol under time
+pressure just to check a box.
 
 ## 14. Auto-start on boot — proposed shape (not implemented yet)
 

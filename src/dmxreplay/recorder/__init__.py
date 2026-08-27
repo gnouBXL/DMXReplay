@@ -1,1 +1,5 @@
-"""Recorder engine (Phase 2-5). Not yet implemented. Target API: docs/API.md §4."""
+"""Recorder core engine (Phase 5). See docs/API.md §4."""
+from .recorder import Recorder
+from .status import RecorderStatus
+
+__all__ = ["Recorder", "RecorderStatus"]

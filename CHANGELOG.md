@@ -6,6 +6,46 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 5/6: Recorder and Player core engines + CLI (headless)
+- `src/dmxreplay/dmx/engine.py` (`DMXEngine`): live, protocol-agnostic per-universe
+  state aggregator -- the "DMX Engine" box in the brief's architecture diagram.
+  Art-Net/sACN listeners feed it raw updates; it commits a full DMXFrame snapshot
+  (every row's current state) on each one, per `docs/TIMING.md` §4.1's policy. Row
+  assignment is first-seen order across both protocols combined.
+- `src/dmxreplay/recorder/recorder.py` (`Recorder`): `add_source()` (Art-Net/sACN,
+  multiple sources supported), `get_universes()` (live discovery status for a
+  checkbox UI), `start()` (freezes the discovered universe set into a `Manifest` and
+  opens a `DMXReplayWriter`), `stop()`, `get_status()` (duration, frame/packet counts,
+  malformed-packet counts, file size). One shared `MasterClock` across all sources.
+- `src/dmxreplay/player/player.py` (`Player`): `load()` (decodes the whole file via
+  `DMXReplayReader`), `set_output()`/`set_universe_mapping()`, `play()`/`pause()`/
+  `stop()`/`seek()`/`set_speed()`/`set_fps()`/`set_loop()`. A `Timeline`-driven
+  playback loop samples the current DMX state (sample-and-hold, SPECIFICATION.md §13)
+  and emits it over real Art-Net/sACN only when it changes. Supports forward and
+  reverse playback and looping in both directions.
+- `src/dmxreplay/cli/{record,play,info}.py`: real `dmxreplay-record`,
+  `dmxreplay-play` (incl. `--headless`, accepted for config/auto-start compatibility
+  per `docs/RASPBERRY_PI.md` §13-14 -- the CLI never depended on a GUI to begin
+  with), and `dmxreplay-info`. `dmxreplay-convert` is a documented stub (brief §51
+  never specified its scope).
+- Two bugs found and fixed by the real tests exercising all of this end to end: (1)
+  `Recorder.add_source(..., port=0)` was silently rebinding to the default Art-Net
+  port because of a `port or DEFAULT` idiom that treats `0` as falsy; (2) `Player`'s
+  loop-restart path called `seek(0)` and then slept a full tick before ever
+  re-checking the timeline, silently skipping the first frame after every loop
+  restart except the very first pass through the file.
+- Tests: `test_dmx_engine.py`, `test_recorder.py` (real Art-Net traffic captured into
+  a real `.dmxr`), `test_player.py` (real playback verified over real Art-Net:
+  correct DMX, seek, pause, loop, reverse, output remapping), `test_cli.py` (drives
+  the actual CLI coroutines end to end, plus a subprocess smoke test of the installed
+  `dmxreplay-info` console script), and `test_end_to_end_recorder_player.py` (the
+  full `Art-Net -> Recorder -> .dmxr -> Player -> Art-Net` validation, now through
+  the real orchestration classes rather than the lower-level primitives
+  `test_end_to_end_artnet_pipeline.py` used before these classes existed).
+- `docs/API.md` and `docs/RASPBERRY_PI.md` updated to reflect what's actually
+  implemented now (both were written against a target/proposed interface before this
+  phase).
+
 ### Added — Raspberry Pi 4/5 readiness analysis (V1 platform requirement)
 - `docs/RASPBERRY_PI.md`: full compatibility analysis of the Phase 0–4 format/
   architecture against a new V1 requirement (standalone Raspberry Pi 4/5 operation).

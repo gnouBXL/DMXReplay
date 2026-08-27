@@ -94,12 +94,17 @@ DMXReplay is built in phases (tracked in [CHANGELOG.md](CHANGELOG.md)):
 | 2 | Art-Net input/output | ✅ |
 | 3 | sACN / E1.31 input/output | ✅ |
 | 4 | DMXReplay encoder (DMX → video → lossless container) | ✅ |
-| 5 | Recorder GUI | planned |
-| 6 | Player GUI (load/play/pause/seek/loop/speed) | planned |
+| 5 | Recorder core engine + `dmxreplay-record` CLI (headless) | ✅ core+CLI, GUI planned |
+| 6 | Player core engine + `dmxreplay-play` CLI (load/play/pause/seek/loop/speed, headless) | ✅ core+CLI, GUI planned |
 | 7 | Audio synchronization | planned |
 | 8 | External video synchronization | planned |
 | 9 | Preview modes (raw DMX / RGB LED) | planned |
 | 10 | Conformance test suite | planned |
+
+Phases 5/6's **engine and CLI** are done and fully headless (no GUI dependency at
+all — see [docs/RASPBERRY_PI.md](docs/RASPBERRY_PI.md) §12); the GUI applications
+themselves (`dmxreplay.ui`) are separate, still-planned work that will sit on top of
+this same engine without changing it.
 
 ## Getting started (development)
 
@@ -108,6 +113,24 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 ```
+
+## Command-line usage
+
+```bash
+# Record a live Art-Net stream (discovers universes for 3s, then records until Ctrl+C)
+dmxreplay-record --input artnet --interface 0.0.0.0 --fps 30 --output show.dmxr
+
+# Play it back over Art-Net, looping, to a specific console/node
+dmxreplay-play show.dmxr --output artnet --destination 192.168.1.100 --loop
+
+# Inspect a file's manifest without playing it
+dmxreplay-info show.dmxr
+```
+
+All three run headless — no GUI dependency (`dmxreplay-play --headless` is accepted
+for config-file/auto-start compatibility, see
+[docs/RASPBERRY_PI.md](docs/RASPBERRY_PI.md) §13-§14; the CLI never imports a GUI
+toolkit either way).
 
 ## License
 

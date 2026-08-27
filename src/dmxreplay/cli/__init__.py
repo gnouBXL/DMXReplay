@@ -1,2 +1,2 @@
-"""dmxreplay-record / -play / -info / -convert CLI entry points (Phase 11).
-Not yet implemented. See docs/API.md §7."""
+"""dmxreplay-record / -play / -info CLI entry points (Phase 5-6). See
+docs/API.md §7. dmxreplay-convert is a documented stub -- see convert.py."""
