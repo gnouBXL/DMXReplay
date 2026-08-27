@@ -5,8 +5,15 @@ time-based media**: recorded from a live Art-Net or sACN stream, stored lossless
 a standard video container, and replayed later with accurate timing — synchronized with
 audio, with an external video file, and eventually with external timecode sources.
 
-> **Status:** early development (V1, Phase 0/1 of the roadmap below). The format is not
-> yet stable. See [CHANGELOG.md](CHANGELOG.md) and [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
+> **Status:** early development (V1, Phase 0–4 of the roadmap below done). The format is
+> not yet stable. See [CHANGELOG.md](CHANGELOG.md) and [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
+
+## Platform targets
+
+V1 targets desktop Linux/macOS/Windows **and standalone operation on a Raspberry Pi 4
+or 5** (headless, no GUI required) — see [docs/RASPBERRY_PI.md](docs/RASPBERRY_PI.md)
+for the compatibility analysis and real (not simulated) decode/network throughput
+measurements behind that claim.
 
 ## Why
 
@@ -68,7 +75,8 @@ the bytes) — see [docs/SPECIFICATION.md](docs/SPECIFICATION.md) and
 │   ├── SACN.md            sACN / ANSI E1.31 notes
 │   ├── TIMING.md          Timestamps, VFR, master timeline
 │   ├── CONTAINER.md       Physical container/codec details
-│   └── API.md             Core engine API (Recorder / Player / Clock)
+│   ├── API.md             Core engine API (Recorder / Player / Clock)
+│   └── RASPBERRY_PI.md    Raspberry Pi 4/5 compatibility analysis and benchmarks
 ├── FORMAT-RESEARCH.md     Phase 0 benchmark results and recommendation
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md

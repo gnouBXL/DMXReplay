@@ -6,6 +6,32 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Raspberry Pi 4/5 readiness analysis (V1 platform requirement)
+- `docs/RASPBERRY_PI.md`: full compatibility analysis of the Phase 0–4 format/
+  architecture against a new V1 requirement (standalone Raspberry Pi 4/5 operation).
+  **Verdict: no format or codec change needed** — DMXReplay frames are tiny (65,536
+  pixels max at the V1 ceiling vs. 2,073,600 for 1080p), so FFV1's lack of hardware
+  decode on either Pi SoC doesn't matter in practice. One scoped, non-blocking finding:
+  the optional `rgb_packed` encoding's pure-Python pixel packer is measurably slow at
+  128 universes and should be optimized before relying on it at that scale on a Pi 4;
+  the required grayscale baseline has no such issue.
+- `benchmark/player_pipeline_benchmark.py` + `run_player_pipeline_benchmark.sh`: real
+  decode -> Art-Net/sACN-output pipeline benchmark (not synthetic) at 1/10/50/128
+  universes @ 30fps, measuring CPU/RSS/realtime-factor via `/usr/bin/time -v`. Results
+  in `benchmark/pi_readiness_results.json`. Pi 4/5 figures are extrapolated from these
+  measurements using published Geekbench 6 comparisons, explicitly labeled as estimates
+  pending physical-hardware validation (no Pi hardware available in this environment).
+- `tests/test_end_to_end_artnet_pipeline.py`: validates the full
+  `Art-Net -> DMXReplayWriter -> .dmxr -> DMXReplayReader -> Art-Net` data path
+  byte-for-byte, using the real Phase 2/3 network I/O and Phase 4 codec/container
+  (the dedicated Recorder/Player orchestration classes are Phase 5/6 work and don't
+  exist yet, but the data path they'll wrap is fully exercised here).
+- Confirmed by audit, not modified: the master clock design (`docs/TIMING.md`) and the
+  GUI-independent package architecture (`CONTRIBUTING.md`) both already satisfy the
+  Raspberry Pi / headless requirement as designed.
+- Proposed (not yet implemented, tracked for Phase 5/6): a `--headless` flag for
+  `dmxreplay-play` and a config-file shape for future boot-time auto-start.
+
 ### Added — Phase 4: DMXReplay encoder/decoder (real Matroska + FFV1 container I/O)
 - `src/dmxreplay/codec/pixels.py`: DMX universe <-> pixel row packing for both
   encodings (pure Python, no extra dependency): grayscale (1:1, 512 bytes/row) and
