@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dmxreplay"
+version = "0.1.0-dev"
+description = "DMXReplay: an open, documented format and toolset for recording and replaying DMX lighting shows as lossless, timestamped media."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "DMXReplay contributors" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "jsonschema>=4.19",
+]
+codec = [
+    # PyAV wraps ffmpeg's libavcodec/libavformat; used from Phase 4 onward
+    # for FFV1/Matroska container I/O. Not required for Phase 0/1.
+    "av>=11.0",
+]
+network = [
+    # Art-Net / sACN I/O, added in Phase 2/3.
+    "sacn>=1.9",
+]
+
+[project.scripts]
+dmxreplay-record = "dmxreplay.cli.record:main"
+dmxreplay-play = "dmxreplay.cli.play:main"
+dmxreplay-info = "dmxreplay.cli.info:main"
+dmxreplay-convert = "dmxreplay.cli.convert:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

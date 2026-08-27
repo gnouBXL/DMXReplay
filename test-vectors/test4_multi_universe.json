@@ -1,0 +1,16 @@
+{
+  "name": "test4_multi_universe",
+  "frame_count": 8,
+  "universes_per_frame": 128,
+  "channels_per_universe": 512,
+  "timestamps_ns": [
+    0,
+    33333333,
+    66666666,
+    99999999,
+    133333332,
+    166666665,
+    199999998,
+    233333331
+  ]
+}

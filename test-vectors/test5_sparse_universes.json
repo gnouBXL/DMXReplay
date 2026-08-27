@@ -1,0 +1,50 @@
+{
+  "name": "test5_sparse_universes",
+  "frame_count": 8,
+  "universes_per_frame": 4,
+  "channels_per_universe": 512,
+  "timestamps_ns": [
+    0,
+    33333333,
+    66666666,
+    99999999,
+    133333332,
+    166666665,
+    199999998,
+    233333331
+  ],
+  "universes": [
+    {
+      "row": 0,
+      "protocol": "Art-Net",
+      "net": 0,
+      "subnet": 0,
+      "universe": 1,
+      "port_address": 1
+    },
+    {
+      "row": 1,
+      "protocol": "Art-Net",
+      "net": 0,
+      "subnet": 0,
+      "universe": 5,
+      "port_address": 5
+    },
+    {
+      "row": 2,
+      "protocol": "Art-Net",
+      "net": 0,
+      "subnet": 1,
+      "universe": 1,
+      "port_address": 17
+    },
+    {
+      "row": 3,
+      "protocol": "Art-Net",
+      "net": 0,
+      "subnet": 2,
+      "universe": 10,
+      "port_address": 42
+    }
+  ]
+}
