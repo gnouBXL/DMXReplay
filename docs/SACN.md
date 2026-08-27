@@ -18,11 +18,40 @@ universe  →  row : reverse lookup over manifest.universes[]
 
 ## 2. Packet layers consumed (V1)
 
-An E1.31 data packet nests three ACN layers; V1 parses only what it needs to extract
-DMX data, validating each layer's declared length against the actual UDP payload before
-trusting any offset derived from it (SPECIFICATION.md §18):
+Exact byte layout for a full 512-slot packet (matches
+`src/dmxreplay/network/sacn/packet.py`; total size 638 bytes: `38` root + `77`
+framing + `10` DMP header + `1` start code + `512` DMX data):
 
-1. **Root Layer** (ACN) — validates the 16-byte ACN packet identifier, and that the
+| Offset | Size | Layer | Field |
+|---|---|---|---|
+| 0–1 | 2 | Root | Preamble Size (`0x0010`) |
+| 2–3 | 2 | Root | Post-amble Size (`0x0000`) |
+| 4–15 | 12 | Root | ACN Packet Identifier (`"ASC-E1.17\0\0\0"`) |
+| 16–17 | 2 | Root | Flags (top 4 bits `0x7`) & Length |
+| 18–21 | 4 | Root | Vector = `VECTOR_ROOT_E131_DATA` (`0x00000004`) |
+| 22–37 | 16 | Root | CID (sender's UUID) |
+| 38–39 | 2 | Framing | Flags & Length |
+| 40–43 | 4 | Framing | Vector = `VECTOR_E131_DATA_PACKET` (`0x00000002`) |
+| 44–107 | 64 | Framing | Source Name (UTF-8, null-padded) |
+| 108 | 1 | Framing | Priority (`0`–`200`) |
+| 109–110 | 2 | Framing | Synchronization Address |
+| 111 | 1 | Framing | Sequence Number |
+| 112 | 1 | Framing | Options (bit7 Preview_Data, bit6 Stream_Terminated, bit5 Force_Sync) |
+| 113–114 | 2 | Framing | Universe |
+| 115–116 | 2 | DMP | Flags & Length |
+| 117 | 1 | DMP | Vector = `VECTOR_DMP_SET_PROPERTY` (`0x02`) |
+| 118 | 1 | DMP | Address Type & Data Type (`0xA1`) |
+| 119–120 | 2 | DMP | First Property Address (`0x0000`) |
+| 121–122 | 2 | DMP | Address Increment (`0x0001`) |
+| 123–124 | 2 | DMP | Property Value Count (`1 + slot count`) |
+| 125 | 1 | DMP | Start Code (`0x00` for DMX — see §3) |
+| 126… | ≤512 | DMP | DMX data slots |
+
+V1 parses only what it needs to extract DMX data, validating each layer's declared
+length against the actual UDP payload before trusting any offset derived from it
+(SPECIFICATION.md §18):
+
+1. **Root Layer** (ACN) — validates the 12-byte ACN packet identifier, and that the
    vector identifies an E1.31 data packet (`VECTOR_ROOT_E131_DATA`,
    `0x00000004`). CID (component identifier) is read for diagnostics/source
    identification but not required for correctness.

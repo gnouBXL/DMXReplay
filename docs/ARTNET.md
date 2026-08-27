@@ -71,7 +71,21 @@ row  →  manifest.universes[row] = {protocol: "Art-Net", net, subnet, universe}
 | `OpTimeCode` (0x9700) | — | Documented only (§5), not implemented as a sync source in V1 |
 | Everything else | — | MUST be ignored (not treated as an error) if well-formed but unrecognized; MUST be logged and dropped if malformed (SPECIFICATION.md §15/§18) |
 
-## 4. `OpDmx` packet validation (recorder side)
+## 4. `OpDmx` packet layout and validation (recorder side)
+
+Exact byte layout (matches `src/dmxreplay/network/artnet/packet.py`):
+
+| Offset | Size | Field | Notes |
+|---|---|---|---|
+| 0–7 | 8 | `ID` | ASCII `"Art-Net"` + `0x00` |
+| 8–9 | 2 | `OpCode` | uint16, **little-endian** (low byte first) — `0x5000` for `OpDmx` |
+| 10–11 | 2 | `ProtVerHi`, `ProtVerLo` | uint16, **big-endian** (high byte first) |
+| 12 | 1 | `Sequence` | `0` = sequencing disabled by sender; else wraps `1–255` (§5) |
+| 13 | 1 | `Physical` | Informational input-port index; not used for addressing |
+| 14 | 1 | `SubUni` | `(Sub-Net << 4) \| Universe` |
+| 15 | 1 | `Net` | `0–127` (top bit reserved, must be `0`) |
+| 16–17 | 2 | `LengthHi`, `LengthLo` | uint16, **big-endian**, DMX data length |
+| 18… | `Length` | `Data` | DMX channel values |
 
 Before use, a recorder MUST validate, in order:
 
@@ -84,9 +98,7 @@ Before use, a recorder MUST validate, in order:
 5. Declared DMX data length (bytes 16–17, big-endian) is even, `>= 2`, `<= 512`, and
    matches the actual remaining payload length (protects against a short/truncated UDP
    datagram being read out of bounds).
-6. Physical/Sub-Uni/Net bytes (bytes 12, 14, 15) decode to a `Port-Address` within
-   range (`Net` ≤ 127; the packet's own `SubUni` byte already packs `Sub-Net`+`Universe`
-   into a single byte per the Art-Net spec — `SubUni = (SubNet << 4) | Universe`).
+6. `Net` (byte 15) `<= 127`.
 
 A packet failing any check is dropped and logged at `WARN` (SPECIFICATION.md §18); it
 MUST NOT be forwarded to the DMX engine or allowed to affect any active universe's
