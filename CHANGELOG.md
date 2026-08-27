@@ -6,6 +6,29 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 9: Preview modes (raw DMX / RGB LED)
+- `src/dmxreplay/preview`: `raw_channel_grid(universe)` (identity — the 512 raw
+  channel values, unchanged), `rgb_led_pixels(universe)` (groups channels 3-at-a-time
+  into `(R, G, B)` pixels, reusing the same grouping as the RGB-packed encoding in
+  `SPECIFICATION.md` §5.2; 512 isn't divisible by 3, so the final pixel's missing
+  component(s) are zero-padded rather than wrapping into the next universe or reading
+  out of bounds — covered by a dedicated test), `rgb_hex(pixel)` (`"#RRGGBB"` from raw
+  byte values — brief §37 explicitly forbids a gamma/dimming curve here, and the test
+  suite checks that literal values map 1:1), and `compute_preview(universe, mode)` to
+  dispatch between them. Every function is pure and read-only: none can mutate a
+  `Universe` or influence what's stored/output (brief §8's "MUST NOT modify stored DMX
+  values"), verified with a real record→decode round trip that computes both preview
+  modes on a decoded frame and asserts it's byte-identical to what was written.
+- `Player` gained `set_preview_mode(mode)` and `current_preview(row)`, which read
+  whichever `Universe` is currently active at the given row under the existing
+  sample-and-hold playback state and hand it to `compute_preview()` — purely a read
+  path, never feeding back into playback, network output, or recording (asserted by a
+  test that calls it repeatedly and checks playback position is unaffected).
+- No GUI renders these values yet — that's `dmxreplay.ui`, out of scope for this
+  headless environment; `current_preview()` is usable today from a script or a future
+  GUI layer alike.
+- `docs/API.md` updated with a new `dmxreplay.preview` subsection.
+
 ### Added — Phase 8: External video synchronization
 - `src/dmxreplay/video`: `ExternalVideoReader` (opens a separate conventional video
   file via PyAV -- MP4/MOV/MKV etc., never embedded in `.dmxr`, `docs/CONTAINER.md`

@@ -5,7 +5,7 @@ time-based media**: recorded from a live Art-Net or sACN stream, stored lossless
 a standard video container, and replayed later with accurate timing — synchronized with
 audio, with an external video file, and eventually with external timecode sources.
 
-> **Status:** early development (V1, Phase 0–4 of the roadmap below done). The format is
+> **Status:** early development (V1, Phase 0–9 of the roadmap below done). The format is
 > not yet stable. See [CHANGELOG.md](CHANGELOG.md) and [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
 ## Platform targets
@@ -98,7 +98,7 @@ DMXReplay is built in phases (tracked in [CHANGELOG.md](CHANGELOG.md)):
 | 6 | Player core engine + `dmxreplay-play` CLI (load/play/pause/seek/loop/speed, headless) | ✅ core+CLI, GUI planned |
 | 7 | Audio synchronization | ✅ |
 | 8 | External video synchronization | ✅ |
-| 9 | Preview modes (raw DMX / RGB LED) | planned |
+| 9 | Preview modes (raw DMX / RGB LED) | ✅ |
 | 10 | Conformance test suite | planned |
 
 Phases 5/6's **engine and CLI** are done and fully headless (no GUI dependency at

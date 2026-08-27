@@ -9,9 +9,9 @@ consumers of this API, not the other way around. This is what makes `dmxreplay-p
 future host able to embed the engine directly (brief §52).
 
 Status: **§1–§7 below are all implemented (Phases 1–8)**, except `dmxreplay.ui` (no
-GUI yet — the engine and CLI don't need it). Preview modes (Phase 9) are the
-remaining engine work, layered onto `Player` without changing anything documented
-here.
+GUI yet — the engine and CLI don't need it). Everything documented here is
+implemented (Phases 1–9); the remaining V1 work is `dmxreplay.ui` itself and the
+conformance test suite (Phase 10).
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -178,6 +178,8 @@ class Player:
     def set_audio_sink(self, sink: AudioSink | None) -> None: ...  # None -> NullAudioSink (default)
     def load_external_video(self, video_path: str) -> None: ...   # separate file, never embedded -- CONTAINER.md §7
     def set_video_sink(self, sink: VideoSink | None) -> None: ...  # None -> NullVideoSink (default)
+    def set_preview_mode(self, mode: Literal["raw", "rgb_led"]) -> None: ...
+    def current_preview(self, row: int): ...   # -> tuple[int,...] | tuple[tuple[int,int,int],...] | None
     async def play(self, speed: float | None = None) -> None: ...
     def pause(self) -> None: ...
     async def stop(self) -> None: ...
@@ -205,9 +207,10 @@ clock (`docs/TIMING.md` §1, `SPECIFICATION.md` §14). `AudioSink` is forward-on
 non-1.0 speeds (including reverse) stop audio rather than play it incorrectly. External
 video (below) is decoded on demand each tick (unlike audio/DMX, not eager-loaded —
 video is far larger per second of content) and presented whenever the current frame
-changes, same sample-and-hold semantics as DMX. `set_preview_mode()` (brief §36) is
-**not yet implemented** — left off this class until Phase 9 lands rather than stubbed.
-`dmxreplay-play` (§7) is a thin wrapper over this.
+changes, same sample-and-hold semantics as DMX. `set_preview_mode()` and
+`current_preview(row)` (brief §36, `dmxreplay.preview` below) reconstruct a
+visualization of the current DMX state at the given row — purely cosmetic, never
+affects stored/output DMX. `dmxreplay-play` (§7) is a thin wrapper over `Player`.
 
 ### `dmxreplay.audio` — implemented (Phase 7)
 
@@ -266,6 +269,42 @@ candidate frame to an owned `DecodedVideoFrame` (RGB bytes copied out) immediate
 decoding it, before any further `next()` call, to avoid this. No on-screen/display sink
 is implemented — this project's environment is headless with no display attached, so a
 real one cannot be built *or verified* here; that's future GUI-phase work.
+
+### `dmxreplay.preview` — implemented (Phase 9)
+
+```python
+PreviewMode = Literal["raw", "rgb_led"]
+
+def raw_channel_grid(universe: Universe) -> tuple[int, ...]: ...
+    # identity: the universe's 512 channel values, unchanged.
+
+LED_PIXELS_PER_UNIVERSE: int  # 171 == ceil(512 / 3)
+
+def rgb_led_pixels(universe: Universe) -> tuple[tuple[int, int, int], ...]: ...
+    # groups channels 3-at-a-time into (R, G, B) pixels (brief §7/§37,
+    # SPECIFICATION.md §5.2's RGB-packed grouping, reused here for preview);
+    # 512 is not divisible by 3, so the final pixel's missing component(s)
+    # are padded with 0, never read out of bounds or wrapped from channel 1.
+
+def rgb_hex(pixel: tuple[int, int, int]) -> str: ...
+    # "#RRGGBB", raw byte values -- brief §37 explicitly forbids applying a
+    # gamma/dimming curve here; this is a literal reinterpretation, not a
+    # rendering.
+
+def compute_preview(universe: Universe, mode: PreviewMode) -> (
+    tuple[int, ...] | tuple[tuple[int, int, int], ...]
+): ...
+```
+
+Every function in this module is pure and read-only: none of them mutate the
+`Universe` passed in, and none of them can affect what gets stored in a `.dmxr` file
+or sent back out over Art-Net/sACN (brief §8's "MUST NOT modify stored DMX values").
+`Player.set_preview_mode()`/`current_preview(row)` (§5 above) are the only integration
+point — they read whatever `Universe` is currently active at `row` under the existing
+sample-and-hold playback state and hand it to `compute_preview()`; they never feed back
+into playback, output, or recording. No GUI renders these values yet (that's
+`dmxreplay.ui`, out of scope for this headless environment) — `current_preview()` is
+usable today from a script or the future GUI layer alike.
 
 ## 6. `dmxreplay.clock.ClockProvider` — future timecode sources (documented, not implemented)
 

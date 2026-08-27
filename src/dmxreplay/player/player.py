@@ -34,11 +34,12 @@ from typing import Literal
 from ..audio import AudioSink, NullAudioSink
 from ..clock import ClockProvider, Timeline
 from ..container import DMXReplayReader
-from ..video import ExternalVideoReader, NullVideoSink, VideoSink
 from ..dmx import DMXFrame
 from ..metadata import Manifest, artnet_port_address_to_fields
 from ..network.artnet import ARTNET_PORT, ArtNetSender
 from ..network.sacn import SACN_PORT, SACNSender
+from ..preview import PreviewMode, compute_preview
+from ..video import ExternalVideoReader, NullVideoSink, VideoSink
 
 OutputProtocol = Literal["Art-Net", "sACN"]
 
@@ -75,6 +76,8 @@ class Player:
         self._video_sink: VideoSink = NullVideoSink()
         self._video_reader: ExternalVideoReader | None = None
         self._last_presented_video_ns: int | None = None
+
+        self._preview_mode: PreviewMode = "raw"
 
     # --- Loading -------------------------------------------------------- #
 
@@ -119,6 +122,23 @@ class Player:
         """Configure where decoded external video frames are presented.
         None resets to NullVideoSink (the default -- safe/no-op)."""
         self._video_sink = sink if sink is not None else NullVideoSink()
+
+    def set_preview_mode(self, mode: PreviewMode) -> None:
+        """Select how current_preview() reconstructs a row for visualization
+        (brief §36: "Raw DMX" or "RGB Pixels"). Purely cosmetic -- never
+        affects what's stored or sent to Art-Net/sACN output
+        (docs/SPECIFICATION.md §5.3)."""
+        self._preview_mode = mode
+
+    def current_preview(self, row: int):
+        """The current DMX state at `row`, transformed per the configured
+        preview mode (dmxreplay.preview). Returns None if nothing is loaded
+        or `row` isn't active at the current position."""
+        idx = self.active_frame_index(self._timeline.position_ns())
+        if idx is None:
+            return None
+        universe = self._frames[idx].universes[row]
+        return compute_preview(universe, self._preview_mode)
 
     @property
     def manifest(self) -> Manifest | None:
