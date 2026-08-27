@@ -8,10 +8,10 @@ consumers of this API, not the other way around. This is what makes `dmxreplay-p
 ([docs/RASPBERRY_PI.md](RASPBERRY_PI.md) §12), and keeps TouchDesigner or any other
 future host able to embed the engine directly (brief §52).
 
-Status: **§1–§7 below are all implemented (Phases 1–8)**, except `dmxreplay.ui` (no
-GUI yet — the engine and CLI don't need it). Everything documented here is
-implemented (Phases 1–9); the remaining V1 work is `dmxreplay.ui` itself and the
-conformance test suite (Phase 10).
+Status: everything documented here is implemented (Phases 1–9) and has an explicit
+conformance test suite (Phase 10, [`tests/test_conformance.py`](../tests/test_conformance.py),
+`docs/SPECIFICATION.md` §19–§20). The only remaining V1 work is `dmxreplay.ui` itself
+(no GUI yet — the engine and CLI don't need it).
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -164,7 +164,7 @@ box in the brief's architecture diagram, brief §49), which `start()` freezes in
 only ever calls these methods and reads `RowInfo`/`RecorderStatus`; it never touches
 the network or encoder directly. `dmxreplay-record` (§7) is a thin wrapper over this.
 
-## 5. `dmxreplay.player` — implemented (Phase 6-7: DMX + audio)
+## 5. `dmxreplay.player` — implemented (Phases 6-9: DMX, audio, video, preview)
 
 ```python
 class Player:
@@ -184,6 +184,7 @@ class Player:
     def pause(self) -> None: ...
     async def stop(self) -> None: ...
     def seek(self, position_ns: int) -> None: ...
+    async def frame_step(self, direction: int = 1) -> None: ...  # +1/-1 frame, emits synchronously
     def set_speed(self, speed: float) -> None: ...          # e.g. 1.0, -1.0 for reverse
     def set_fps(self, fps: float) -> None: ...              # playback sampling rate, TIMING.md §5
     def set_loop(self, enabled: bool) -> None: ...
@@ -207,7 +208,12 @@ clock (`docs/TIMING.md` §1, `SPECIFICATION.md` §14). `AudioSink` is forward-on
 non-1.0 speeds (including reverse) stop audio rather than play it incorrectly. External
 video (below) is decoded on demand each tick (unlike audio/DMX, not eager-loaded —
 video is far larger per second of content) and presented whenever the current frame
-changes, same sample-and-hold semantics as DMX. `set_preview_mode()` and
+changes, same sample-and-hold semantics as DMX. `frame_step(direction)` moves exactly
+one recorded DMX frame forward or backward and pauses there, emitting the resulting
+state *synchronously* (unlike `seek()`, which only takes effect on the next playback
+tick) — required by `SPECIFICATION.md` §20's Player conformance rule that seek, play,
+pause, frame-step, and loop must each leave correct DMX state immediately after the
+call. `set_preview_mode()` and
 `current_preview(row)` (brief §36, `dmxreplay.preview` below) reconstruct a
 visualization of the current DMX state at the given row — purely cosmetic, never
 affects stored/output DMX. `dmxreplay-play` (§7) is a thin wrapper over `Player`.

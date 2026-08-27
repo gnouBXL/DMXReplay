@@ -5,7 +5,8 @@ time-based media**: recorded from a live Art-Net or sACN stream, stored lossless
 a standard video container, and replayed later with accurate timing — synchronized with
 audio, with an external video file, and eventually with external timecode sources.
 
-> **Status:** early development (V1, Phase 0–9 of the roadmap below done). The format is
+> **Status:** early development (V1, Phase 0–10 of the roadmap below done — the core
+> engine is feature-complete; `dmxreplay.ui` is the only work left). The format is
 > not yet stable. See [CHANGELOG.md](CHANGELOG.md) and [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
 ## Platform targets
@@ -99,12 +100,17 @@ DMXReplay is built in phases (tracked in [CHANGELOG.md](CHANGELOG.md)):
 | 7 | Audio synchronization | ✅ |
 | 8 | External video synchronization | ✅ |
 | 9 | Preview modes (raw DMX / RGB LED) | ✅ |
-| 10 | Conformance test suite | planned |
+| 10 | Conformance test suite | ✅ |
 
 Phases 5/6's **engine and CLI** are done and fully headless (no GUI dependency at
 all — see [docs/RASPBERRY_PI.md](docs/RASPBERRY_PI.md) §12); the GUI applications
 themselves (`dmxreplay.ui`) are separate, still-planned work that will sit on top of
-this same engine without changing it.
+this same engine without changing it. With Phase 10 done, the core engine (Reader,
+Recorder, Player, and the full V1.0 file format) is feature-complete and has an
+explicit conformance test suite (`tests/test_conformance.py`,
+[`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) §19–§20) validating all three
+conformance roles and all 10 official test vectors; `dmxreplay.ui` is the only
+V1 scope left.
 
 ## Getting started (development)
 

@@ -5,11 +5,10 @@ below; the playback loop, master timeline, and network output all live here,
 enabling `dmxreplay-play --headless` without dmxreplay.ui
 (docs/RASPBERRY_PI.md §12/§13).
 
-Scope of this pass: DMX playback and output (Art-Net/sACN), audio playback
-(Phase 7), and external video (Phase 8), all driven by one Timeline
-(docs/TIMING.md §1-§2), with seek/play/pause/stop/loop/speed/fps. Preview
-modes (Phase 9) are not implemented here -- API.md documents them as a
-later-phase addition to this same class, not a reason to stub them now.
+Scope: DMX playback and output (Art-Net/sACN), audio playback (Phase 7),
+external video (Phase 8), and preview modes (Phase 9, purely cosmetic --
+see dmxreplay.preview), all driven by one Timeline (docs/TIMING.md §1-§2),
+with seek/play/pause/stop/frame-step/loop/speed/fps.
 
 Audio playback is deliberately simple: on play()/seek(), the whole
 already-decoded PCM buffer (from `DMXReplayReader.read_audio_pcm()`) is
@@ -237,6 +236,38 @@ class Player:
         self._last_sent_index = None  # force re-emit at the new position
         self._last_presented_video_ns = None  # force re-present, same reason
         self._sync_audio_to_playback_state()
+
+    async def frame_step(self, direction: int = 1) -> None:
+        """Move exactly one recorded DMX frame forward (direction=1) or
+        backward (direction=-1) from wherever the timeline currently sits,
+        pausing there (SPECIFICATION.md §20's Player conformance requires
+        seek/play/pause/frame-step/loop to all leave *correct DMX state
+        immediately after the call* -- unlike seek(), which only takes
+        effect on the next playback tick, frame-step emits synchronously so
+        a caller frame-stepping while paused sees output right away).
+        Clamped at both ends of the file; stepping past either end holds at
+        that boundary frame rather than wrapping. Requires set_output() to
+        have been called first (same precondition as play()) -- opens the
+        sender itself if play() hasn't already, so a caller can frame-step
+        through a file without ever starting continuous playback."""
+        if not self._timestamps:
+            return
+        if self._output_protocol is None:
+            raise RuntimeError("call set_output() before frame_step()")
+        if self._sender is None:
+            await self._open_output()
+        self._timeline.pause()
+        current_idx = self.active_frame_index(self._timeline.position_ns())
+        if current_idx is None:
+            current_idx = 0
+        new_idx = max(0, min(current_idx + direction, len(self._timestamps) - 1))
+        new_position = self._timestamps[new_idx]
+        self._timeline.seek(new_position)
+        self._last_presented_video_ns = None
+        self._sync_audio_to_playback_state()
+        await self._emit(self._frames[new_idx])
+        self._last_sent_index = new_idx
+        self._present_video_if_due(new_position)
 
     def set_speed(self, speed: float) -> None:
         self._speed = speed

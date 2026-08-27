@@ -162,11 +162,37 @@ what the timeline fundamentally measures.
 
 ## 8. Synchronization tolerance
 
-A numeric tolerance for "DMX/audio/video are considered in sync" is required by
-SPECIFICATION.md's Test 9 (synchronization test) but cannot be honestly claimed until
-it is measured against the real player (Phase 8/10) rather than asserted in advance.
-Placeholder target, to be confirmed empirically and updated here once Phase 8 lands:
-**±1 frame at the external video's own frame rate** (e.g. ±33ms at 30fps external
-video) between the video track's presented frame and the DMX state considered "current"
-at the same master-timeline position. This document will be updated with the measured
-figure rather than left as an aspirational placeholder once that test exists.
+Measured, not just asserted in advance: `tests/test_conformance.py::
+test_synchronization_dmx_and_external_video_agree_within_one_second` (Phase 10,
+SPECIFICATION.md's Test 9) plays a DMX file and an external video file together, each
+carrying a per-second counter, and records the real wall-clock time each track's value
+was emitted/presented. Three runs of that measurement in this project's own development
+environment (Linux container, loopback UDP, no real network or display hardware --
+**not** a Raspberry Pi, see `docs/RASPBERRY_PI.md`) gave a maximum DMX↔video pairing
+skew of **~0.18ms**, several orders of magnitude under the original placeholder target.
+
+That number is not surprising once the architecture is read closely, and the low figure
+is a consequence of the design rather than a property to rely on in isolation: `Player.
+_run_loop()` (`src/dmxreplay/player/player.py`) reads the master `Timeline` position
+**once per tick** and uses that same value for both `_emit()` (DMX) and
+`_present_video_if_due()` (video) -- so DMX and video are never on two independently
+advancing clocks that could drift apart (§1's guiding principle again). What the
+measured 0.18ms actually captures is scheduling/IPC jitter between "the tick computed
+this state" and "a listener on the other end of a UDP socket observed it," not any
+cross-track clock error, which is architecturally zero here.
+
+What *is* still a real, non-zero source of skew -- and is bounded by construction rather
+than independently measured -- is each track's own sample-and-hold staleness relative to
+the true timeline position: DMX can be up to one *recorded DMX frame's* age stale, and
+external video up to one *video frame period* stale (§5, §6), because both replay the
+most recent sample at-or-before the current position rather than interpolating. The
+**±1 frame at the external video's own frame rate** figure from the original placeholder
+is kept as the documented worst-case bound for that video-side staleness component (e.g.
+±40ms at 25fps, ±33ms at 30fps) -- it was never actually the DMX↔video *pairing* error,
+which the measurement above shows is negligible by comparison.
+
+This conclusion is specific to the environment it was measured in; a real Raspberry Pi
+under CPU/network load, or a GUI-driven display pipeline with its own present-time
+buffering, could add pairing skew this loopback measurement cannot see. If that turns
+out to matter in practice, re-run the same conformance test on target hardware and
+update the figure here -- don't assume the container-measured number generalizes.

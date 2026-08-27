@@ -423,13 +423,19 @@ see that directory's README for exact byte layouts):
 8. **Seek** — play → seek forward → seek backward → verify exact DMX state at each stop.
 9. **Synchronization** — DMX + audio + external video, a per-second visible counter
    compared against the DMX channel value at the same instant, within a documented
-   tolerance (target: **±1 video frame at the external video's own frame rate**, to be
-   confirmed empirically in Phase 8/10 and recorded here once measured).
+   tolerance (measured, not assumed — see [TIMING.md](TIMING.md) §8: ~0.18ms DMX↔video
+   pairing skew in this project's own environment, well under the ±1-video-frame
+   staleness bound each track is individually subject to).
 10. **Loop** — verify seamless timeline restart (DMX, audio, and external video all
     resume at their respective `t=0` on the same master-timeline tick).
 
-Tests 1–5 are implemented now (Phase 1); 6–10 require the recorder/player/sync engine
-(Phases 2–9) and are tracked as follow-up work.
+All 10 test vectors are implemented. Tests 1–5 at the `dmxreplay.dmx` data-model level
+(`tests/test_dmx_model.py`) and round-tripped through the real container
+(`tests/test_container_roundtrip.py`); tests 6–9 in
+[`tests/test_conformance.py`](../tests/test_conformance.py) (Phase 10); test 8 (seek)
+and test 10 (loop) in `tests/test_player.py`, exercised again against `frame_step()` in
+`test_conformance.py`. See §20 below and `test_conformance.py`'s module docstring for
+the full test↔requirement mapping.
 
 ## 20. Conformance requirements
 

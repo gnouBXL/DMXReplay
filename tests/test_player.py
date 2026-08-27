@@ -194,6 +194,70 @@ def test_reverse_playback_decreases_dmx_state(tmp_path):
     assert values == sorted(values, reverse=True)  # non-increasing throughout
 
 
+def test_frame_step_forward_emits_the_next_frame_synchronously(tmp_path):
+    path = str(tmp_path / "s.dmxr")
+    _make_dmxr(path, frame_count=10, universe_count=1)
+
+    async def body():
+        listener, rig, port = await _start_rig()
+        player = Player()
+        player.load(path)
+        player.set_output("Art-Net", interface_ip="127.0.0.1", destination_ip="127.0.0.1", port=port)
+
+        await player.frame_step(1)  # frame 0 -> frame 1, no play() call at all
+        await asyncio.sleep(0.02)
+        listener.stop()
+        return rig
+
+    rig = asyncio.run(body())
+    # Channel-1 value for frame 1 is (1*10) % 256 = 10 -- must appear right
+    # away, with no playback loop ever having run.
+    assert rig.received == [(1, 10)]
+
+
+def test_frame_step_backward_and_clamping_at_both_ends(tmp_path):
+    path = str(tmp_path / "s.dmxr")
+    _make_dmxr(path, frame_count=5, universe_count=1)
+
+    async def body():
+        listener, rig, port = await _start_rig()
+        player = Player()
+        player.load(path)
+        player.set_output("Art-Net", interface_ip="127.0.0.1", destination_ip="127.0.0.1", port=port)
+
+        await player.frame_step(-1)  # already at frame 0 -- clamp, stay at 0
+        await asyncio.sleep(0.02)
+        player.seek(4 * FRAME_PERIOD_NS)  # jump to the last frame (index 4)
+        await player.frame_step(1)  # step past the end -- clamp, stay at 4
+        await asyncio.sleep(0.02)
+        listener.stop()
+        return rig
+
+    rig = asyncio.run(body())
+    values = [v for _u, v in rig.received]
+    assert values[0] == 0  # clamped at the start: frame 0's value
+    assert values[-1] == 40  # clamped at the end: frame 4's value, (4*10) % 256
+
+
+def test_frame_step_pauses_playback(tmp_path):
+    path = str(tmp_path / "s.dmxr")
+    _make_dmxr(path, frame_count=10, universe_count=1)
+
+    async def body():
+        listener, rig, port = await _start_rig()
+        player = Player()
+        player.load(path)
+        player.set_output("Art-Net", interface_ip="127.0.0.1", destination_ip="127.0.0.1", port=port)
+
+        await player.play()
+        await asyncio.sleep(0.05)
+        await player.frame_step(1)
+        assert player.playing is False
+        listener.stop()
+
+    asyncio.run(body())
+
+
 def test_universe_mapping_remaps_output_without_touching_the_file(tmp_path):
     path = str(tmp_path / "s.dmxr")
     _make_dmxr(path, frame_count=3, universe_count=1)  # recorded as Port-Address 1

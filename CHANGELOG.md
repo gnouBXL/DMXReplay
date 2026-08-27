@@ -6,6 +6,47 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 10: Conformance test suite
+- `tests/test_conformance.py`: explicit tests mapped to `SPECIFICATION.md` §20's three
+  conformance roles (Reader/Recorder/Player) and the remaining official test vectors
+  from §19 that needed the recorder/player/sync engine to exist: 6 (high packet rate —
+  a real, unthrottled 4-universe burst through the actual `Recorder`, confirming zero
+  drops/malformed packets and byte-exact final state), 7 (timing irregularity — real
+  `asyncio.sleep()` gaps of deliberately varying length between sent packets, confirming
+  the resulting file stores genuine VFR rather than resampling onto a fixed grid), and 9
+  (synchronization — DMX and an external video played together, each carrying a
+  per-second counter, confirming they never disagree by more than 1 second). Tests 8
+  (seek) and 10 (loop) already had dedicated coverage in `tests/test_player.py` and
+  aren't duplicated here.
+- **Two real gaps found while checking §20's requirements one by one against what
+  existed, not assumed in advance**: `Player` had no sACN output test at all (only
+  Art-Net had ever been exercised, despite §20 requiring both) — added
+  `test_player_conformance_outputs_valid_sacn`. More significantly, `Player` had **no
+  `frame_step()` method**, despite §20 explicitly requiring "seek, play, pause,
+  frame-step, and loop" with correct DMX state immediately after each. Implemented
+  `Player.frame_step(direction)` (`src/dmxreplay/player/player.py`): moves exactly one
+  recorded frame forward or backward, pauses there, and — unlike `seek()`, which only
+  takes effect on the next playback tick — emits the resulting DMX state synchronously,
+  opening its own output sender if `play()` was never called. Covered by
+  `tests/test_player.py` (forward/backward/clamping-at-both-ends/pauses-playback) and
+  exercised again as a conformance check.
+- **A real number replacing an honest placeholder**: `docs/TIMING.md` §8's synchronization
+  tolerance was a documented "to be confirmed empirically" placeholder since Phase 4.
+  `test_synchronization_dmx_and_external_video_agree_within_one_second` measures the
+  actual DMX↔video pairing skew (real wall-clock timestamps at packet-receipt and
+  frame-presentation time, not simulated) — ~0.18ms across three runs in this project's
+  own environment, architecturally near-zero because `Player._run_loop()` reads the
+  master `Timeline` position once per tick and uses that same value for both DMX and
+  video, rather than measuring two independently-advancing clocks. §8 now explains why
+  that number is low (design, not luck), keeps the original ±1-video-frame figure as the
+  bound on each track's own sample-and-hold staleness (a different, still-real quantity),
+  and is explicit that the measurement is container/loopback-specific, not a Raspberry Pi
+  hardware claim.
+- `docs/SPECIFICATION.md` §19, `docs/API.md`, `test-vectors/README.md`, `README.md`
+  updated: all 10 official test vectors now have a stated implementation location: this
+  file, `tests/test_dmx_model.py`, `tests/test_container_roundtrip.py`, or
+  `tests/test_player.py`.
+
 ### Added — Phase 9: Preview modes (raw DMX / RGB LED)
 - `src/dmxreplay/preview`: `raw_channel_grid(universe)` (identity — the 512 raw
   channel values, unchanged), `rgb_led_pixels(universe)` (groups channels 3-at-a-time

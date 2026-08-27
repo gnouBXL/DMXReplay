@@ -24,9 +24,11 @@ grayscale-encoding DMXReplay encoder would consume (`docs/SPECIFICATION.md` §5.
 per-frame `timestamps_ns`, and (for the sparse vector only) the row → source-universe
 `universes` mapping.
 
-These vectors operate at the `dmxreplay.dmx` data-model level (`Universe`/`DMXFrame`)
-and do not yet require the codec/container modules (Phase 4). Round-trip coverage is in
-[`tests/test_dmx_model.py`](../tests/test_dmx_model.py). Tests 6–10 from the
-specification (high packet rate, timing irregularity, seek, synchronization, loop)
-require the recorder/player/sync engine and are tracked as Phase 2+ follow-up work, not
-static files.
+These vectors operate at the `dmxreplay.dmx` data-model level (`Universe`/`DMXFrame`).
+Round-trip coverage is in [`tests/test_dmx_model.py`](../tests/test_dmx_model.py), and
+again through the real container in
+[`tests/test_container_roundtrip.py`](../tests/test_container_roundtrip.py). Tests 6–10
+from the specification (high packet rate, timing irregularity, seek, synchronization,
+loop) needed the recorder/player/sync engine to exist and are not static files — they're
+implemented in [`tests/test_conformance.py`](../tests/test_conformance.py) (Phase 10)
+and `tests/test_player.py`, per `docs/SPECIFICATION.md` §19.
