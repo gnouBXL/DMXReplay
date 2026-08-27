@@ -127,14 +127,26 @@ for the measured size/complexity trade-off behind the recommendation below.
 
 ### 5.2 RGB-packed (`"encoding": "rgb_packed"`) — OPTIONAL, storage-optimized
 
-- Frame width = **171** pixels (`ceil(512 / 3)`).
+- Frame width = **171** pixels (`ceil(512 / 3)`) — 3 DMX channels per pixel.
 - Frame height = number of active universes, `N`.
-- Pixel format: 8-bit-per-component RGB, no alpha (ffmpeg `pix_fmt=rgb24`).
-- Mapping, for pixel `p` in `0..170` and component `c` in `{R=0, G=1, B=2}`:
-  `channel_index = p*3 + c` (0-based); `channel_index < 512` → that pixel component
-  holds DMX channel `channel_index + 1`. For `p = 170`, `c = 2` (`channel_index = 512`,
-  out of range): that component is **unused and MUST be written as `0`**, and MUST be
-  ignored (not interpreted as a channel value) on read.
+- Pixel format: **`bgr0`, 4 bytes per pixel** (byte order Blue, Green, Red, pad;
+  ffmpeg/libavcodec `pix_fmt=bgr0`). **Not** a tightly-packed 3-byte `rgb24`: FFV1 (the
+  V1 baseline codec, §3) has no 8-bit packed 3-byte RGB pixel format at all — only
+  4-byte formats (`bgr0`, `bgra`) among its 8-bit RGB-likes (confirmed by querying
+  `av.codec.Codec("ffv1", "w").video_formats`; see FORMAT-RESEARCH.md §3.1 for how this
+  was discovered). The **logical** channel-to-component mapping below is unaffected;
+  only the physical byte order and the extra always-zero 4th byte differ from a
+  hypothetical tight `rgb24`.
+- Mapping, for pixel `p` in `0..170`: DMX channel `3p+1` (1-based) → this pixel's
+  **R** component, `3p+2` → **G**, `3p+3` → **B**. Physically, within the pixel's 4
+  bytes, these are written in **`bgr0`** order: byte 0 = B, byte 1 = G, byte 2 = R,
+  byte 3 = pad (always `0`, MUST be ignored on read — it never carries a channel
+  value, regardless of `p`). Separately, for `p = 170`, channel indices `3p+1..3p+3`
+  (0-based `510..512`) run past the last valid channel (0-based index `511`); any
+  component whose channel index is `≥ 512` (i.e. `p=170`'s B component) is **unused
+  and MUST be written as `0`**, and MUST be ignored (not interpreted as a channel
+  value) on read — this is in addition to, and independent of, the format's own pad
+  byte.
 - Measured ~42% smaller than grayscale for representative content (FORMAT-RESEARCH.md
   §3); RECOMMENDED for long-duration or high-universe-count recordings.
 - A conformant writer MAY support this encoding; a conformant reader SHOULD support it
@@ -268,9 +280,19 @@ container/muxer version info for diagnostics).
   derived only from an assumed frame rate. See [TIMING.md](TIMING.md) for the full
   rationale and the measured hazard in FORMAT-RESEARCH.md §6 (implicit frame-rate
   reconciliation silently duplicating a frame).
-- `timestamp_resolution_ns` in the manifest documents the *effective* precision actually
-  achieved (implementation- and OS-dependent; typically in the low microseconds), so a
-  reader can reason about jitter tolerance without guessing.
+- `timestamp_resolution_ns` in the manifest documents the *effective, as-stored*
+  precision — i.e. the granularity a reader can actually rely on, not the raw
+  capture-side clock's precision. These are **not the same thing**, and conflating them
+  was an earlier draft error corrected once real storage was implemented (Phase 4):
+  the in-memory capture clock (§3 above) is OS-dependent and typically low-microsecond
+  or better, but the **physical container/codec toolchain currently in use quantizes
+  timestamps to whole milliseconds** on write (Matroska's muxer has a fixed 1 ms
+  `TimecodeScale` in this toolchain, and the video encoder's own time base must be
+  pinned to match it explicitly or timing is silently lost even earlier — both measured
+  in FORMAT-RESEARCH.md §11). `docs/CONTAINER.md`'s `STORAGE_TIMESTAMP_RESOLUTION_NS`
+  (`1,000,000`, i.e. 1 ms) is therefore what `timestamp_resolution_ns` is set to for V1
+  files produced by the reference writer. A reader MUST use the manifest's declared
+  value, not assume any particular resolution.
 
 ## 12. Frame timing
 

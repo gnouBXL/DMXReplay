@@ -85,7 +85,7 @@ DMXReplay is built in phases (tracked in [CHANGELOG.md](CHANGELOG.md)):
 | 1 | DMX core: data model, master clock, metadata schema | ✅ |
 | 2 | Art-Net input/output | ✅ |
 | 3 | sACN / E1.31 input/output | ✅ |
-| 4 | DMXReplay encoder (DMX → video → lossless container) | planned |
+| 4 | DMXReplay encoder (DMX → video → lossless container) | ✅ |
 | 5 | Recorder GUI | planned |
 | 6 | Player GUI (load/play/pause/seek/loop/speed) | planned |
 | 7 | Audio synchronization | planned |

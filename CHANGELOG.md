@@ -6,6 +6,40 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 4: DMXReplay encoder/decoder (real Matroska + FFV1 container I/O)
+- `src/dmxreplay/codec/pixels.py`: DMX universe <-> pixel row packing for both
+  encodings (pure Python, no extra dependency): grayscale (1:1, 512 bytes/row) and
+  rgb_packed (bgr0, 4 bytes/pixel -- see correction below).
+- `src/dmxreplay/codec/frame_codec.py`: `DMXFrame` <-> list of pixel rows.
+- `src/dmxreplay/codec/video_frame.py`: pixel rows <-> `av.VideoFrame`, handling
+  libav plane stride/padding explicitly (queried at runtime, never assumed --
+  confirmed empirically that both rgb24-shaped and bgr0 frames have non-trivial
+  row padding that differs by width/format).
+- `src/dmxreplay/container/writer.py` (`DMXReplayWriter`) and `reader.py`
+  (`DMXReplayReader`): the real Matroska + FFV1 + manifest-attachment file I/O
+  chosen in FORMAT-RESEARCH.md, via the optional `av` (PyAV) dependency. Manifest
+  is embedded as a Matroska attachment (`add_attachment`/`stream.data`), fully
+  in-process -- no `ffmpeg` subprocess needed for either reading or writing.
+- Round-trip verified byte-for-byte lossless for every Phase 1 test vector (ramp,
+  alternating, random, 128 universes, sparse), in both encodings, including exact
+  reproduction of irregular (VFR) per-frame timestamps and correct handling of two
+  source frames landing on the same output millisecond.
+- **Two more measured findings, corrected before they became bugs:**
+  1. FFV1 has no 8-bit packed 3-byte RGB pixel format -- only 4-byte `bgr0`/`bgra`.
+     The Phase 0 benchmark's "RGB-packed" result was real (ffmpeg silently
+     converted `rgb24`→`bgr0` under the hood) but the spec described the wrong
+     on-disk byte layout; corrected in `SPECIFICATION.md` §5.2, `CONTAINER.md` §2,
+     `FORMAT-RESEARCH.md` §3.1, and `pixels.py`.
+  2. Passing `rate=` to `add_stream()` pins the video codec context's own internal
+     `time_base` to `1/rate`, silently truncating finer per-frame timestamps onto
+     that grid *inside the encoder* (deeper than the Phase 0 muxer-level frame-sync
+     hazard) -- two frames 22ms apart at "30fps" collapsed onto the same output
+     tick. Fixed by setting `stream.codec_context.time_base` directly instead;
+     documented in `FORMAT-RESEARCH.md` §11, `TIMING.md` §3, `CONTAINER.md` §2.
+- `pyproject.toml`: `av` moved into its own `codec` extra pulled in by `dev`
+  (previously-listed `network` extra removed -- Art-Net/sACN are implemented from
+  scratch, no third-party `sacn` package is used).
+
 ### Added — Phase 3: sACN / ANSI E1.31 network I/O
 - `src/dmxreplay/network/sacn/packet.py`: `E131DataPacket` -- full root/framing/DMP
   layer parse and build (byte-exact, 638 bytes for a full 512-slot universe),
@@ -73,6 +107,6 @@ format and API may still change between entries.
 - `README.md`, `CONTRIBUTING.md`, `LICENSE` (MIT).
 
 ### Not yet implemented
-Everything from Phase 4 onward (the actual DMXReplay encoder/decoder,
-Recorder/Player GUIs, audio and external-video synchronization, preview modes, CLI
-binaries, conformance suite). Tracked in `README.md`'s roadmap table.
+Everything from Phase 5 onward (Recorder/Player GUIs, audio and external-video
+synchronization, preview modes, CLI binaries, conformance suite). Tracked in
+`README.md`'s roadmap table.

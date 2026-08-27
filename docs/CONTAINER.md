@@ -25,9 +25,9 @@ normative encoding rules.
 | Property | Value |
 |---|---|
 | Codec | **FFV1** (FFmpeg codec ID `ffv1`), version 3 (the version emitted by current FFmpeg `-c:v ffv1` with default `-level`) |
-| Pixel format | `gray` (grayscale encoding, SPECIFICATION.md §5.1) or `rgb24` (RGB-packed encoding, §5.2), matching the manifest's `encoding` field |
+| Pixel format | `gray` (grayscale encoding, SPECIFICATION.md §5.1) or **`bgr0`** (RGB-packed encoding, §5.2 — **not** `rgb24`: FFV1 has no 8-bit packed 3-byte RGB format, see FORMAT-RESEARCH.md §3.1), matching the manifest's `encoding` field |
+| Timestamps | Stream `codec_context.time_base` set explicitly to `1/1000` (`STORAGE_TIME_BASE`, `src/dmxreplay/container/writer.py`); **never** pass a nominal `rate=` to the encoder call that creates the stream — doing so pins the codec's internal time base to `1/rate` and silently collapses finer-grained frame timestamps onto that grid *inside the encoder*, before the muxer is even involved (measured, FORMAT-RESEARCH.md §11). The manifest's `fps` (SPECIFICATION.md §12) is the nominal-rate source of truth; it is independent of this internal encoder setting. |
 | Slicing/threading | Left at encoder defaults for V1 (FFV1 supports slice-based parallelism; not tuned/pinned in V1 — revisit if Phase 10 benchmarks show it matters at 128 universes) |
-| Frame rate (container-level) | Set to the manifest's nominal `fps`; **actual per-frame timestamps govern playback** (SPECIFICATION.md §13) — the container-level rate is advisory/nominal only, consistent with VFR usage |
 | GOP structure | Intra-only (every frame is a keyframe) — this is inherent to FFV1 and is required for good seek granularity (every frame is independently decodable) |
 
 FFV1 was selected over Ut Video, HuffYUV, and uncompressed `rawvideo` because it

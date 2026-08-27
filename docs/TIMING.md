@@ -49,9 +49,17 @@ assuming a fixed frame index arithmetic.
 ## 3. Capture-side clock requirements
 
 - MUST be monotonic (immune to NTP/wall-clock adjustment stepping backward).
-- MUST be high-resolution — V1 targets **microsecond-order** effective resolution
-  (`timestamp_resolution_ns` in the manifest records what was actually achieved on the
-  recording machine; do not hard-code an assumed value).
+- MUST be high-resolution at the **in-memory capture** stage — V1 targets
+  microsecond-order effective resolution there (implementation- and OS-dependent).
+  **This is not the same thing as what ends up on disk.** Once Phase 4's actual
+  container/codec toolchain is in the loop, the *stored* precision is coarser: ~1 ms,
+  a hard property of this toolchain's Matroska muxer (no finer `TimecodeScale` is
+  exposed) and of the video encoder's own time base, which must be pinned to match it
+  explicitly or timing is lost even earlier, inside the encoder (both measured, not
+  assumed — see FORMAT-RESEARCH.md §11). `timestamp_resolution_ns` in the manifest
+  records this *stored* precision (currently `1,000,000` ns for files from the
+  reference writer) — do not hard-code an assumed value, and do not read it as a claim
+  about the capture clock's own precision.
 - Reference implementation: Python `time.monotonic_ns()` (POSIX
   `CLOCK_MONOTONIC`/`CLOCK_MONOTONIC_RAW`-backed on Linux/macOS,
   `QueryPerformanceCounter`-backed on Windows via the interpreter).

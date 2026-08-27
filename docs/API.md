@@ -6,11 +6,12 @@ GUI toolkit (see [CONTRIBUTING.md](../CONTRIBUTING.md)) — GUIs (Phase 5/6) and
 the other way around. This keeps TouchDesigner or any other future host able to embed
 the engine directly (brief §52).
 
-Status: **§1–§3 below are implemented now (Phase 1)**. **§4–§6 are the target
-interface for Phases 2–8** — documented here so downstream code (CLI, GUI, TD
+Status: **§1–§3.6 below are implemented now (Phases 1–4)**. **§4–§6 are the target
+interface for Phases 5–8** — documented here so downstream code (CLI, GUI, TD
 integration) can be designed against a stable contract as those phases land, but the
-classes themselves do not exist in `src/` yet; treat them as a specification, not a
-changelog entry.
+`Recorder`/`Player` classes themselves do not exist in `src/` yet (they will be built
+*on top of* the already-implemented §3.5/§3.6 network and codec/container layers);
+treat §4–§6 as a specification, not a changelog entry.
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -85,7 +86,62 @@ class Manifest:
 
 Validated against [`schema.json`](../src/dmxreplay/metadata/schema.json) (JSON Schema).
 
-## 4. `dmxreplay.recorder` — target interface (Phase 2–5)
+## 3.5 `dmxreplay.network` — Art-Net / sACN I/O (implemented, Phase 2–3)
+
+```python
+# dmxreplay.network.artnet
+class ArtDmxPacket:                 # parse()/to_bytes(), full validation -- ARTNET.md §4
+    ...
+class ArtNetListener:
+    async def start(self, interface_ip: str, port: int = ARTNET_PORT) -> None: ...
+    def stop(self) -> None: ...
+    def get_universes(self) -> list[UniverseStatus]: ...
+class ArtNetSender:
+    async def start(self, interface_ip: str) -> None: ...
+    def send(self, net: int, subnet: int, universe: int, data: bytes,
+              destination_ip: str) -> ArtDmxPacket: ...
+
+# dmxreplay.network.sacn
+class E131DataPacket:               # parse()/to_bytes(), full root/framing/DMP -- SACN.md §2
+    ...
+class SACNListener:
+    async def start(self, interface_ip: str, multicast_universes: list[int] | None = None) -> None: ...
+class SACNSender:
+    def send(self, universe: int, dmx_data: bytes, destination_ip: str | None = None) -> E131DataPacket: ...
+```
+
+Both listeners take an `on_packet` callback and expose `get_universes()` (live
+per-universe status: packet rate, source IP, channel count — brief §13/§28), matching
+what `Recorder` (§4) will aggregate across protocols. See [ARTNET.md](ARTNET.md) and
+[SACN.md](SACN.md) for wire format and validation detail.
+
+## 3.6 `dmxreplay.codec` / `dmxreplay.container` — DMX ⇄ file (implemented, Phase 4)
+
+```python
+# dmxreplay.codec (pure Python: pixels.py, frame_codec.py; PyAV-dependent: video_frame.py)
+def dmxframe_to_pixel_rows(frame: DMXFrame, encoding: Literal["grayscale", "rgb_packed"]) -> list[bytes]: ...
+def pixel_rows_to_dmxframe(rows: list[bytes], timestamp_ns: int, encoding: str) -> DMXFrame: ...
+
+# dmxreplay.container (requires the optional `av` / PyAV dependency)
+class DMXReplayWriter:
+    def __init__(self, path: str, manifest: Manifest) -> None: ...   # manifest fully known up front -- see CONTAINER.md
+    def write_frame(self, frame: DMXFrame) -> None: ...
+    def close(self) -> None: ...
+
+class DMXReplayReader:
+    def __init__(self, path: str) -> None: ...   # raises NotADMXReplayFileError if no manifest attachment
+    manifest: Manifest
+    def read_frames(self) -> Iterator[DMXFrame]: ...
+    def close(self) -> None: ...
+```
+
+Both are context managers (`with DMXReplayWriter(...) as w:`). `Recorder.start()` (§4)
+will construct a `DMXReplayWriter` once universe discovery has fixed the manifest;
+`Player.load()` (§5) will construct a `DMXReplayReader`. Round-trip losslessness (every
+official test vector, both encodings) is verified in `tests/test_container_roundtrip.py`
+against the real Matroska+FFV1 container chosen in FORMAT-RESEARCH.md — not mocked.
+
+## 4. `dmxreplay.recorder` — target interface (Phase 5)
 
 ```python
 class Recorder:
@@ -101,6 +157,10 @@ encoder → container writer. A GUI or CLI only ever calls these methods and rea
 `RecorderStatus`; it never touches the network or encoder directly.
 
 ## 5. `dmxreplay.player` — target interface (Phase 6–9)
+
+(Basic load/play/pause/seek/output can build directly on §3.6's `DMXReplayReader` plus
+§3.5's `ArtNetSender`/`SACNSender` once a `Timeline`-driven loop wraps them; the
+harder parts of this phase are audio/external-video sync, Phases 7–8.)
 
 ```python
 class Player:
@@ -152,4 +212,5 @@ dmxreplay-convert <options>
 
 `dmxreplay-info` prints the parsed manifest (§3) plus container-level facts (duration,
 track codecs, file size) — useful standalone for debugging even before the recorder/
-player exist, since it depends only on §1–§3 (already implemented).
+player exist, since it depends only on §1–§3.6 (already implemented: it can be built
+directly on `DMXReplayReader.manifest`, §3.6).

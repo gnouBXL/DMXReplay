@@ -20,18 +20,18 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+codec = [
+    # PyAV wraps ffmpeg's libavcodec/libavformat; used from Phase 4 onward
+    # for FFV1/Matroska container I/O (dmxreplay.codec.video_frame,
+    # dmxreplay.container). Not required for dmxreplay.dmx/.clock/.metadata/
+    # .network, which have no third-party dependencies at all -- Art-Net and
+    # sACN are implemented from scratch (see docs/ARTNET.md, docs/SACN.md).
+    "av>=11.0",
+]
 dev = [
     "pytest>=7.4",
     "jsonschema>=4.19",
-]
-codec = [
-    # PyAV wraps ffmpeg's libavcodec/libavformat; used from Phase 4 onward
-    # for FFV1/Matroska container I/O. Not required for Phase 0/1.
-    "av>=11.0",
-]
-network = [
-    # Art-Net / sACN I/O, added in Phase 2/3.
-    "sacn>=1.9",
+    "dmxreplay[codec]",
 ]
 
 [project.scripts]

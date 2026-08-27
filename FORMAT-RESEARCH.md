@@ -111,6 +111,34 @@ see spec §1), and a grayscale frame can be opened in any image viewer as an
 immediately-legible "channel × universe" heatmap for debugging.
 **RGB-packed is an optional, storage-optimized encoding**, recommended for
 long-duration or high-universe-count recordings where the ~40% size reduction matters.
+
+### 3.1 Correction (Phase 4): the measurement above is real, the pixel format name was not
+
+When this benchmark was run (§3 above), `ffmpeg -pix_fmt rgb24` was used as an *output*
+option and silently auto-converted: `Incompatible pixel format 'rgb24' for codec
+'ffv1', auto-selecting format 'bgr0'`. The **file sizes and compression ratios above are
+accurate** (that's genuinely what got written to disk) — but the assumption that the
+stored pixel format was a tightly-packed 3-byte-per-pixel `rgb24` was wrong. Querying
+FFV1's actual supported formats directly (`av.codec.Codec("ffv1", "w").video_formats`)
+confirms it has **no** 8-bit packed 3-byte RGB format at all — only 4-byte `bgr0`
+(B, G, R, unused-pad-byte) and `bgra` among 8-bit RGB-likes. PyAV's low-level API (used
+by the real encoder, unlike the CLI's convenience layer) does not silently substitute a
+compatible format the way the `ffmpeg` binary's high-level option parsing does — it
+fails outright (`avcodec_open2` returns `EINVAL`) if asked for `rgb24` directly.
+
+**Correction applied:** the V1 RGB-packed physical encoding is **`bgr0`**, 4 bytes per
+pixel (byte order B, G, R, pad; pad always `0`), not a hypothetical 3-byte `rgb24`. The
+*logical* channel-to-component mapping brief §7 illustrates (channel 3p+1→R, 3p+2→G,
+3p+3→B) is unchanged; only the physical byte order and the extra always-zero 4th byte
+differ from what was originally drafted. `docs/SPECIFICATION.md` §5.2 and
+`docs/CONTAINER.md` §2 have been corrected accordingly, and
+`src/dmxreplay/codec/pixels.py` implements the corrected layout (verified by round-trip
+tests, `tests/test_codec_pixels.py` and `tests/test_container_roundtrip.py`). The actual
+per-pixel storage cost is therefore 4 bytes, not 3 — the ~42% size reduction over
+grayscale measured above already reflects this (it was always measuring the real bgr0
+output), so the *conclusion* (RGB-packed is smaller, worth offering as an option) still
+holds; only the written specification of *why*/*how* needed fixing.
+
 A conformant reader must support both; a conformant writer must support at least
 grayscale.
 
@@ -202,12 +230,15 @@ V1 ships**:
 | Container | **Matroska** (files exposed as `.dmxr`) | Only container tested that accepted every lossless codec candidate cleanly; native VFR timestamp support; native attachments for the metadata manifest; MP4 is hard-disqualified (§2.2), MOV has a codec-specific lossless bug on this build (§2.1). |
 | Video codec | **FFV1** | Best compression of the lossless codecs tested (6.8×–11.9× vs. 1.3×–3.5× for HuffYUV/Ut Video), intra-frame (good seek granularity), and it round-tripped losslessly in every configuration tested. |
 | Audio codec | **AAC** | As recommended in the brief; muxes cleanly alongside FFV1 in Matroska (§6), ubiquitous decoder support. |
-| Pixel packing | **Grayscale required (V1 default)**, **RGB-packed optional** | Grayscale: simplest 1:1 mapping, easiest third-party re-implementation, human-inspectable. RGB-packed: ~42% smaller measured (§3), recommended for large/long recordings. Both declared via the `encoding` metadata field. |
+| Pixel packing | **Grayscale required (V1 default)**, **RGB-packed (`bgr0`) optional** | Grayscale: simplest 1:1 mapping, easiest third-party re-implementation, human-inspectable. RGB-packed: ~42% smaller measured (§3); physically `bgr0` (4 B/pixel), not `rgb24` — FFV1 has no packed 3-byte 8-bit RGB format (§3.1). Both declared via the `encoding` metadata field. |
 
 This confirms the brief's proposed starting point (Matroska + FFV1 + AAC) as correct,
-while replacing the "strong candidate" language with numbers, and adds two findings the
-brief didn't anticipate: MP4 is not viable at all, and generic transcoder frame-sync
-defaults are an active hazard the real implementation must avoid by construction (§6).
+while replacing the "strong candidate" language with numbers, and adds findings the
+brief didn't anticipate: MP4 is not viable at all; generic transcoder frame-sync
+defaults are an active hazard the real implementation must avoid by construction (§6);
+that hazard recurs one layer deeper inside the video encoder itself and needed a
+second, distinct fix (§11); and FFV1 has no 3-byte packed RGB format, so "RGB-packed"
+is physically `bgr0` rather than `rgb24` (§3.1).
 
 See [`docs/CONTAINER.md`](docs/CONTAINER.md) for the resulting physical-encoding
 specification, and [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) §3–§7 for how this
@@ -222,3 +253,43 @@ python3 benchmark/format_benchmark.py
 Requires `ffmpeg`/`ffprobe` on `PATH`; uses GNU `time -v` when available for RSS/CPU
 figures (falls back to wall-clock-only otherwise). Writes `benchmark/results.json` and
 cleans up its own temporary encoded files.
+
+## 11. Encoder timestamp precision (a second, deeper VFR hazard)
+
+§6 documented a *muxer/CLI-level* frame-duplication hazard (default `vsync`/`fps_mode`
+reconciling multiple streams). Implementing the real encoder in Phase 4 (via PyAV,
+which exercises libavcodec directly rather than through the `ffmpeg` binary's
+convenience layer) surfaced a second, more fundamental one, at the *encoder* level:
+
+- `container.add_stream("ffv1", rate=30)` pins the video **codec context's own internal
+  `time_base` to `1/30`** — not just an outer/muxer nicety. Every frame's `pts` gets
+  rescaled from whatever `time_base` it was given down onto that 1/30 grid **before**
+  encoding, inside `avcodec_send_frame`.
+- Measured effect: four frames at capture timestamps 0, 21, 43, 64 ms (genuine VFR —
+  unequal spacing) were fed in with millisecond-precision `pts`/`time_base`. Two of them
+  (21 ms and 43 ms) both truncated onto the same 1/30 s tick and came back out of the
+  encoder as **duplicate packet timestamps** — the real irregular timing was destroyed
+  inside the encoder itself, before the muxer ever saw it.
+- **Fix, verified**: do not pass `rate=` to `add_stream()`; instead set
+  `stream.codec_context.time_base` directly (e.g. `Fraction(1, 1000)`, matching the
+  Matroska muxer's own fixed 1 ms `TimecodeScale` — see the finding below) *before* the
+  first `encode()` call. With that alone, the same four timestamps round-tripped
+  exactly: `0, 21, 43, 64` ms in, `0, 21, 43, 64` ms out
+  (`tests/test_container_roundtrip.py::test_timestamps_are_quantized_to_nearest_millisecond`).
+
+Separately, confirmed via `ffmpeg -h muxer=matroska`: the Matroska muxer's AVOptions
+list has no `TimecodeScale`-equivalent knob — the ~1 ms container timestamp
+granularity is a fixed property of this toolchain's Matroska muxer implementation, not
+something DMXReplay can currently ask for finer than. `docs/TIMING.md` §3/§8 and
+`docs/SPECIFICATION.md` §11's `timestamp_resolution_ns` have been corrected to state
+this measured ~1 ms *stored* precision plainly, distinct from the (finer) precision of
+the raw capture-side clock before it is quantized down at write time.
+
+**Net effect for V1**: DMXReplayWriter (`src/dmxreplay/container/writer.py`) rounds
+each frame's capture timestamp to the nearest whole millisecond and forces strictly
+increasing `pts` (bumping by 1 ms on collision) before handing it to the encoder with an
+explicit `codec_context.time_base`. This preserves true variable-frame-rate storage —
+unequal inter-frame spacing survives exactly — down to 1 ms resolution, which is far
+finer than a fixed 30 fps (~33.3 ms) grid and is not expected to be perceptible for
+lighting control, but is *not* the raw sub-millisecond jitter the capture clock can
+observe. That distinction is now documented rather than glossed over.
