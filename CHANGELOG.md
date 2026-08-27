@@ -6,6 +6,35 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase 8: External video synchronization
+- `src/dmxreplay/video`: `ExternalVideoReader` (opens a separate conventional video
+  file via PyAV -- MP4/MOV/MKV etc., never embedded in `.dmxr`, `docs/CONTAINER.md`
+  §7) with `frame_at(position_ns)` serving the sample-and-hold-current frame for any
+  timeline position, seeking efficiently (only re-seeks on backward jumps; forward
+  requests just keep decoding). `VideoSink` protocol, `NullVideoSink` (default),
+  `PPMFileVideoSink` (writes each presented frame as a real, headless-verifiable
+  image -- no display or extra dependency needed).
+- `Player` gained `load_external_video()`, `set_video_sink()`, and
+  `has_external_video`; the playback loop now presents the current external-video
+  frame on every tick whenever it changes, driven by the same `Timeline` as DMX and
+  audio (`docs/TIMING.md` §1) -- confirmed by real tests using an actual encoded
+  H.264/MP4 test video, not a synthetic proxy.
+- **One real bug found and fixed by this phase's tests, not by inspection**: libav
+  reuses/overwrites its internal decoded-frame buffers across successive `decode()`
+  calls. `ExternalVideoReader.frame_at()`'s forward-scanning loop was holding a live
+  `av.VideoFrame` reference across multiple `next()` calls while looking for the
+  right frame, so the final "selected" frame's pixel data had often already been
+  silently overwritten by a *later* frame decoded during the same scan by the time it
+  was converted -- while its *timestamp* (read earlier) stayed correct, making the
+  bug easy to miss without asserting on actual pixel content. Fixed by converting
+  every candidate frame to an owned buffer immediately upon decoding it.
+- No on-screen/display video sink is implemented — this project's environment is
+  headless with no display attached, so one can't be built *or verified* here;
+  `docs/RASPBERRY_PI.md` §8 also notes `ExternalVideoReader` currently decodes in
+  software only (hardware-accelerated decode on a real Pi is an open follow-up, not
+  a DMXReplay format/API change either way).
+- `docs/API.md`, `docs/RASPBERRY_PI.md` §8/§10 updated to match.
+
 ### Added — Phase 7: Audio synchronization
 - `src/dmxreplay/audio`: `AudioSink` protocol, `NullAudioSink` (default, no-op),
   `WavFileAudioSink` (writes decoded PCM to a .wav -- for headless verification and

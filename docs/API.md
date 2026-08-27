@@ -8,10 +8,10 @@ consumers of this API, not the other way around. This is what makes `dmxreplay-p
 ([docs/RASPBERRY_PI.md](RASPBERRY_PI.md) §12), and keeps TouchDesigner or any other
 future host able to embed the engine directly (brief §52).
 
-Status: **§1–§7 below are all implemented (Phases 1–7)**, except `dmxreplay.ui` (no
-GUI yet — the engine and CLI don't need it). External video (Phase 8) and preview
-modes (Phase 9) are the remaining engine work, layered onto `Player` without
-changing anything documented here.
+Status: **§1–§7 below are all implemented (Phases 1–8)**, except `dmxreplay.ui` (no
+GUI yet — the engine and CLI don't need it). Preview modes (Phase 9) are the
+remaining engine work, layered onto `Player` without changing anything documented
+here.
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -176,6 +176,8 @@ class Player:
     ) -> None: ...
     def set_universe_mapping(self, mapping: dict[int, int] | None) -> None: ...  # output remap, brief §34, never mutates the loaded file
     def set_audio_sink(self, sink: AudioSink | None) -> None: ...  # None -> NullAudioSink (default)
+    def load_external_video(self, video_path: str) -> None: ...   # separate file, never embedded -- CONTAINER.md §7
+    def set_video_sink(self, sink: VideoSink | None) -> None: ...  # None -> NullVideoSink (default)
     async def play(self, speed: float | None = None) -> None: ...
     def pause(self) -> None: ...
     async def stop(self) -> None: ...
@@ -187,6 +189,7 @@ class Player:
     duration_ns: int                                          # property
     position_ns: int                                           # property
     has_audio: bool                                             # property
+    has_external_video: bool                                     # property
 ```
 
 `Player` decodes every frame via `DMXReplayReader` (§3.6) at `load()` time, drives an
@@ -199,10 +202,12 @@ not yet needed at V1 scale — see `docs/RASPBERRY_PI.md` §9). Audio playback
 (`play()`/`seek()`/`set_speed()`) re-cues the configured `AudioSink` (below) to match
 the `Timeline`'s position — one master timeline drives both, never an independent audio
 clock (`docs/TIMING.md` §1, `SPECIFICATION.md` §14). `AudioSink` is forward-only, so
-non-1.0 speeds (including reverse) stop audio rather than play it incorrectly.
-`set_preview_mode()` (brief §36) and `external_video_path` (brief §19, Phase 8) are
-**not yet implemented** — left off this class until their phases land rather than
-stubbed. `dmxreplay-play` (§7) is a thin wrapper over this.
+non-1.0 speeds (including reverse) stop audio rather than play it incorrectly. External
+video (below) is decoded on demand each tick (unlike audio/DMX, not eager-loaded —
+video is far larger per second of content) and presented whenever the current frame
+changes, same sample-and-hold semantics as DMX. `set_preview_mode()` (brief §36) is
+**not yet implemented** — left off this class until Phase 9 lands rather than stubbed.
+`dmxreplay-play` (§7) is a thin wrapper over this.
 
 ### `dmxreplay.audio` — implemented (Phase 7)
 
@@ -224,6 +229,43 @@ against real audio hardware in this project's own development environment** — 
 load/play/stop at the right times with the right sample offsets) is real-tested against
 this protocol via a recording test double, which is a meaningfully different claim from
 "verified to produce correct sound," and this document doesn't conflate the two.
+
+### `dmxreplay.video` — implemented (Phase 8)
+
+```python
+@dataclass(frozen=True)
+class DecodedVideoFrame:
+    timestamp_ns: int
+    width: int
+    height: int
+    rgb_bytes: bytes   # tightly packed rgb24, stride already stripped
+
+class ExternalVideoReader:
+    def __init__(self, path: str) -> None: ...
+    def frame_at(self, position_ns: int) -> DecodedVideoFrame | None: ...  # sample-and-hold, SPECIFICATION.md §13
+    duration_ns: int; width: int; height: int   # properties
+    def close(self) -> None: ...
+
+class VideoSink(Protocol):
+    def present(self, frame: DecodedVideoFrame) -> None: ...
+
+class NullVideoSink(VideoSink): ...      # default; always available, does nothing
+class PPMFileVideoSink(VideoSink): ...   # writes each presented frame as a numbered .ppm image; headless-verifiable, no extra dependency
+```
+
+`ExternalVideoReader.frame_at()` re-seeks (via `container.seek()` to the nearest
+preceding keyframe, then decodes forward) only when the requested position moves
+*backward*; a forward request just continues decoding from wherever the reader already
+is, which is the common case during normal playback and avoids reseeking on every
+tick. **Real, non-obvious bug found and fixed while building this**: libav reuses/
+overwrites its internal frame buffers across successive `decode()` calls, so holding a
+live `av.VideoFrame` reference across more than one `next()` call (e.g. while scanning
+forward looking for the right frame) silently returns whatever *later* frame ended up
+in that shared buffer — not the one actually requested. `frame_at()` converts every
+candidate frame to an owned `DecodedVideoFrame` (RGB bytes copied out) immediately upon
+decoding it, before any further `next()` call, to avoid this. No on-screen/display sink
+is implemented — this project's environment is headless with no display attached, so a
+real one cannot be built *or verified* here; that's future GUI-phase work.
 
 ## 6. `dmxreplay.clock.ClockProvider` — future timecode sources (documented, not implemented)
 

@@ -284,6 +284,18 @@ Original text, still accurate for the video half and for the reasoning behind bo
 **Nothing above required changing anything already built.** It's confirmation, not new
 work.
 
+**Update, Phase 8:** `dmxreplay.video.ExternalVideoReader` now exists, decoding via
+plain PyAV/libavcodec — i.e. **software decode by default**, not the hardware
+H.264/H.265 blocks discussed above. Whether PyAV/ffmpeg on a given Raspberry Pi build
+actually uses hardware acceleration depends on how that ffmpeg was compiled (V4L2 M2M
+or similar hwaccel support) and is not something this sandboxed, non-Pi environment can
+build or verify. This is a real, open item, not a settled one: if software-only decode
+turns out to be too slow for 1080p on a Pi 4 in practice, the fix is enabling a
+hardware-accelerated decode path in the `av.open()`/codec-context setup (PyAV supports
+this), not a DMXReplay format or architecture change — `ExternalVideoReader`'s
+`frame_at(position_ns)` interface stays the same either way. Add to §10's list of what
+needs physical hardware to confirm.
+
 ## 9. Recommendation (scoped, not applied)
 
 Consistent with "don't optimize prematurely": the one concrete finding from §4.3 is
@@ -308,7 +320,11 @@ Explicitly not claimed as validated by this document:
   (§6 only covers wired Gigabit, which is what brief §48 and this project's network
   interface selection requirement point toward as the reliable choice).
 - §11's validation test (below), run on actual Raspberry Pi 4 and 5 boards.
-- Anything about Phases 7/8 (audio/video), since those phases don't exist in code yet.
+- Phase 7 (audio): `SoundDeviceAudioSink` against real audio hardware -- this
+  environment has none (§8's update).
+- Phase 8 (external video): whether `ExternalVideoReader`'s software-only decode
+  (§8's update) is fast enough for 1080p on a Pi 4 in practice, and whether enabling
+  hardware-accelerated decode is worth doing.
 
 ## 11. Validation test: Art-Net → Recorder → `.dmxr` → Player → Art-Net
 

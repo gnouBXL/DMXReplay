@@ -5,11 +5,11 @@ below; the playback loop, master timeline, and network output all live here,
 enabling `dmxreplay-play --headless` without dmxreplay.ui
 (docs/RASPBERRY_PI.md §12/§13).
 
-Scope of this pass: DMX playback and output (Art-Net/sACN) plus audio
-playback (Phase 7), all driven by one Timeline (docs/TIMING.md §1-§2), with
-seek/play/pause/stop/loop/speed/fps. External video sync (Phase 8) and
-preview modes (Phase 9) are not implemented here -- API.md documents them
-as later-phase additions to this same class, not a reason to stub them now.
+Scope of this pass: DMX playback and output (Art-Net/sACN), audio playback
+(Phase 7), and external video (Phase 8), all driven by one Timeline
+(docs/TIMING.md §1-§2), with seek/play/pause/stop/loop/speed/fps. Preview
+modes (Phase 9) are not implemented here -- API.md documents them as a
+later-phase addition to this same class, not a reason to stub them now.
 
 Audio playback is deliberately simple: on play()/seek(), the whole
 already-decoded PCM buffer (from `DMXReplayReader.read_audio_pcm()`) is
@@ -18,6 +18,12 @@ position; the sink's own hardware clock then paces actual sound output.
 Timeline is not disciplined against that hardware clock afterward -- see
 dmxreplay.audio's module docstring for why that's an accepted V1 limitation
 rather than an oversight.
+
+External video is never embedded in the .dmxr file (docs/CONTAINER.md §7)
+-- `load_external_video()` opens a separate file via `ExternalVideoReader`
+and, on every playback tick, presents the frame at the current Timeline
+position (sample-and-hold, same semantics as DMX) to a `VideoSink`,
+whenever it's a different frame than last tick.
 """
 from __future__ import annotations
 
@@ -28,6 +34,7 @@ from typing import Literal
 from ..audio import AudioSink, NullAudioSink
 from ..clock import ClockProvider, Timeline
 from ..container import DMXReplayReader
+from ..video import ExternalVideoReader, NullVideoSink, VideoSink
 from ..dmx import DMXFrame
 from ..metadata import Manifest, artnet_port_address_to_fields
 from ..network.artnet import ARTNET_PORT, ArtNetSender
@@ -65,6 +72,10 @@ class Player:
         self._audio_sample_width = 2
         self._audio_loaded_into_sink = False
 
+        self._video_sink: VideoSink = NullVideoSink()
+        self._video_reader: ExternalVideoReader | None = None
+        self._last_presented_video_ns: int | None = None
+
     # --- Loading -------------------------------------------------------- #
 
     def load(self, dmxr_path: str) -> None:
@@ -82,6 +93,32 @@ class Player:
         self._timeline.seek(0)
         self._last_sent_index = None
         self._audio_loaded_into_sink = False
+        if self._video_reader is not None:
+            self._video_reader.close()
+            self._video_reader = None
+        self._last_presented_video_ns = None
+
+    def load_external_video(self, video_path: str) -> None:
+        """Load a conventional video file to play alongside the DMX show,
+        synchronized against the same Timeline (docs/CONTAINER.md §7: never
+        embedded in the .dmxr; a completely separate file). Call after
+        load(). The external video's own duration does not have to match
+        the DMX show's -- SPECIFICATION.md doesn't require it, and
+        `_present_video_if_due()` simply has nothing left to show once its
+        reader runs out of frames for the current position."""
+        if self._video_reader is not None:
+            self._video_reader.close()
+        self._video_reader = ExternalVideoReader(video_path)
+        self._last_presented_video_ns = None
+
+    @property
+    def has_external_video(self) -> bool:
+        return self._video_reader is not None
+
+    def set_video_sink(self, sink: VideoSink | None) -> None:
+        """Configure where decoded external video frames are presented.
+        None resets to NullVideoSink (the default -- safe/no-op)."""
+        self._video_sink = sink if sink is not None else NullVideoSink()
 
     @property
     def manifest(self) -> Manifest | None:
@@ -165,6 +202,7 @@ class Player:
         self._timeline.pause()
         self._timeline.seek(0)
         self._last_sent_index = None
+        self._last_presented_video_ns = None
         self._audio_sink.stop()
         if self._task is not None:
             self._task.cancel()
@@ -177,6 +215,7 @@ class Player:
         position_ns = max(0, min(position_ns, self._duration_ns))
         self._timeline.seek(position_ns)
         self._last_sent_index = None  # force re-emit at the new position
+        self._last_presented_video_ns = None  # force re-present, same reason
         self._sync_audio_to_playback_state()
 
     def set_speed(self, speed: float) -> None:
@@ -269,6 +308,14 @@ class Player:
                     port=self._output_port or SACN_PORT,
                 )
 
+    def _present_video_if_due(self, position_ns: int) -> None:
+        if self._video_reader is None:
+            return
+        frame = self._video_reader.frame_at(position_ns)
+        if frame is not None and frame.timestamp_ns != self._last_presented_video_ns:
+            self._video_sink.present(frame)
+            self._last_presented_video_ns = frame.timestamp_ns
+
     async def _run_loop(self) -> None:
         while True:
             tick_interval = 1.0 / self._fps
@@ -288,11 +335,13 @@ class Player:
                     # restart is silently skipped for one whole tick.
                     self._timeline.seek(0 if at_end else self._duration_ns)
                     self._last_sent_index = None
+                    self._last_presented_video_ns = None
                     continue
                 else:
                     idx = self.active_frame_index(boundary_ns)
                     if idx is not None and idx != self._last_sent_index:
                         await self._emit(self._frames[idx])
+                    self._present_video_if_due(boundary_ns)
                     self._timeline.pause()
                     self._timeline.seek(boundary_ns)
                     return
@@ -301,5 +350,6 @@ class Player:
                 if idx is not None and idx != self._last_sent_index:
                     await self._emit(self._frames[idx])
                     self._last_sent_index = idx
+                self._present_video_if_due(position)
 
             await asyncio.sleep(tick_interval)

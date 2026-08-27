@@ -97,7 +97,7 @@ DMXReplay is built in phases (tracked in [CHANGELOG.md](CHANGELOG.md)):
 | 5 | Recorder core engine + `dmxreplay-record` CLI (headless) | ✅ core+CLI, GUI planned |
 | 6 | Player core engine + `dmxreplay-play` CLI (load/play/pause/seek/loop/speed, headless) | ✅ core+CLI, GUI planned |
 | 7 | Audio synchronization | ✅ |
-| 8 | External video synchronization | planned |
+| 8 | External video synchronization | ✅ |
 | 9 | Preview modes (raw DMX / RGB LED) | planned |
 | 10 | Conformance test suite | planned |
 
