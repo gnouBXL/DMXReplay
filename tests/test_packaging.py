@@ -28,7 +28,11 @@ def test_shell_script_syntax_is_valid(script):
     assert result.returncode == 0, result.stderr
 
 
-def test_systemd_unit_syntax_is_valid():
+@pytest.mark.parametrize("unit_name", [
+    "dmxreplay-player.service",
+    "dmxreplay-server.service",
+])
+def test_systemd_unit_syntax_is_valid(unit_name):
     """systemd-analyze verify legitimately fails in any environment that
     doesn't have DMXReplay actually installed at /opt/dmxreplay (the
     ExecStart binary doesn't exist there) -- that failure is expected and
@@ -40,7 +44,7 @@ def test_systemd_unit_syntax_is_valid():
     if shutil.which("systemd-analyze") is None:
         pytest.skip("systemd-analyze not available in this environment")
 
-    unit_path = PACKAGING_DIR / "systemd" / "dmxreplay-player.service"
+    unit_path = PACKAGING_DIR / "systemd" / unit_name
     result = subprocess.run(
         ["systemd-analyze", "verify", str(unit_path)],
         capture_output=True, text=True,

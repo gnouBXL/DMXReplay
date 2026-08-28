@@ -566,3 +566,67 @@ over separate HTTP/WebSocket libraries because it's one dependency covering both
 (same verification method as `docs/ARCHITECTURE.md` §1 applied to `av`) confirmed to
 publish prebuilt wheels for Windows (amd64/arm64), macOS (universal2), and Linux
 aarch64 — the exact platform set this project already depends on for `av`.
+
+### Discovery, local web config UI, and logs (Phase E)
+
+```python
+# dmxreplay.control.discovery -- docs/NETWORKING.md §3
+class DeviceAdvertiser:
+    def __init__(self, device_name: str, port: int, *, api_version="1.0", auth_required=True, ip: str | None = None) -> None: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    # or: async with DeviceAdvertiser(name, port) as ad: ...
+
+async def discover_devices(timeout_s: float = 3.0) -> list[dict]: ...  # reference client implementation
+
+# dmxreplay.control.logbuffer
+class RingBufferLogHandler(logging.Handler):
+    def lines(self) -> list[str]: ...   # most recent N formatted log lines (default 200)
+```
+
+`DeviceAdvertiser` wraps the `zeroconf` library (`pip install dmxreplay[control]`,
+same extra as `aiohttp` — one `[control]` install gets the whole network layer) to
+advertise `DMXReplay-<name>._dmxreplay._tcp.local.`; `discover_devices()` is a
+reference client, since the mobile app (Phase F) will use its platform's own native
+mDNS APIs instead of embedding Python. Full service type/TXT record spec and failure
+modes: `docs/NETWORKING.md` §3. `dmxreplay-server` advertises automatically unless
+started with `--no-mdns`, and never lets an mDNS failure stop the actual Control
+API/DMX output from starting.
+
+The **local web config UI** (`dmxreplay.control.webui`, extension brief §7/§18) serves
+plain HTML forms at `GET/POST /config`, `POST /config/restart`, `POST /config/shutdown`,
+and `GET /config/logs` — for first-time/no-screen setup, a fallback to the mobile app
+(Phase F remains the *preferred* interface once it exists, per the brief's own stated
+priority). Rendering (`webui.py`) is pure functions with no `aiohttp` import, testable
+without a live server (`tests/test_webui.py`); wired into `ControlServer`'s routes in
+`server.py`. Living in `dmxreplay.control`, not `dmxreplay.ui`: serving HTML strings is
+not "depending on a GUI toolkit" in `CONTRIBUTING.md`'s sense — no Tkinter/Qt/Electron
+import anywhere in this file, it's just another HTTP response format alongside the
+JSON API.
+
+Two implementation details worth knowing if extending this:
+- `/config*` accepts its token via `?token=...` **in addition to** the
+  `Authorization` header the JSON API requires — the one deliberate exception to
+  `docs/MOBILE_API.md` §4's "never a query-string token" rule, because a human typing
+  a URL into a browser can't easily set a custom header. The rendered page threads
+  that token into every form action/link so continued navigation stays authenticated.
+- `POST /config/restart` and `POST /config/shutdown` stop `PlayerService`/
+  `RecorderService` cleanly, then call `os._exit(1)`/`os._exit(0)` respectively — not
+  `sys.exit()`, which raises `SystemExit` that gets swallowed by asyncio's task
+  machinery rather than terminating the process when raised inside a request
+  handler's task; and not `systemctl restart` directly, since this process shouldn't
+  assume it has permission to invoke that. The exit code is the actual mechanism:
+  `packaging/systemd/dmxreplay-player.service`'s `Restart=on-failure` policy
+  (`docs/RASPBERRY_PI_INSTALL.md` §4) brings the process back after a non-zero exit
+  and does *not* after a clean one — restart vs. shutdown is which exit code this
+  handler chooses, not two different code paths. `ControlServer.__init__` accepts an
+  injectable `exit_fn` specifically so `tests/test_control_webui_routes.py` can
+  assert the right code was chosen without actually terminating the test process.
+
+`RingBufferLogHandler` is attached to the `"dmxreplay"` logger (and its level raised
+to `INFO` if it wasn't already permissive enough — a real bug this project's own test
+suite caught: without that, `/config/logs` silently showed nothing, because Python
+loggers default to `WARNING` and info-level status messages never reached the
+buffer). Deliberately not a `journalctl`/systemd-journal integration — this works
+identically on Windows/macOS/Linux since it's a plain `logging.Handler`, not a
+Linux-only, permission-sensitive shell-out.

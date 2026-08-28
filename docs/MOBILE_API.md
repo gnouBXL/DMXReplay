@@ -253,14 +253,24 @@ closing the connection — one bad message doesn't kill the session.
   no session/resume token to carry over — a reconnecting client should immediately send
   `GET_STATUS` to resynchronize its UI.
 
-## 9. What this document does not cover yet
+## 9. What's covered elsewhere, and what's still missing
 
 - **Discovery** (finding a DMXReplay device's IP on the LAN without typing it in) is
-  `docs/ARCHITECTURE.md` Phase E — mDNS/Zeroconf, not part of this API itself.
+  implemented (Phase E) but is **not part of this JSON API** — it's mDNS/Zeroconf,
+  specified in [NETWORKING.md](NETWORKING.md) §3, not an `/api/v1/...` endpoint.
+  Discovery is never required: connecting directly by IP:port always works (§1).
+- **The local web config UI** (`GET/POST /config`, `/config/restart`, `/config/shutdown`,
+  `/config/logs`) is implemented (Phase E) but is also **not part of this JSON API** —
+  it serves HTML forms for a human with a browser, documented in `docs/API.md` §10's
+  "Discovery, local web config UI, and logs" section, not here. It authenticates
+  differently from everything in this document (`?token=` is accepted there
+  specifically, unlike §4's rule for the JSON/WebSocket API).
 - **File transfer** (uploading a `.dmxr`/video pair to the device's show library) is
   Phase G — not implemented; `LOAD_SHOW`/`GET_SHOWS` operate only on files already
   present in the configured show library directory.
 - **`GET_NETWORK_STATUS`** currently reports only the configured Art-Net/sACN output
   settings (protocol/interface/destination/port/priority), not general host network
-  interface status (link state, IP addresses of all interfaces, etc.) — that's
-  `docs/ARCHITECTURE.md` Phase E's local web config page territory, not this command.
+  interface status (link state, IP addresses of all interfaces, etc.) — the local web
+  config UI's `/config` page shows playback/output settings for editing, but doesn't
+  yet surface raw host network interface state either; genuinely not implemented
+  anywhere yet, not just missing from this command.

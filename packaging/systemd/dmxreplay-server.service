@@ -1,0 +1,38 @@
+[Unit]
+Description=DMXReplay Control API server (headless, smartphone-controlled)
+Documentation=https://github.com/gnouBXL/dmxreplay
+# See dmxreplay-player.service's identical comment on why
+# network-online.target (not the weaker network.target).
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=dmxreplay
+Group=dmxreplay
+EnvironmentFile=-/etc/dmxreplay/environment
+ExecStart=/opt/dmxreplay/.venv/bin/dmxreplay-server \
+    --shows-dir /var/lib/dmxreplay/shows \
+    --config /etc/dmxreplay/player.toml \
+    --token-file /etc/dmxreplay/api-token \
+    --device-name %H
+
+# Unlike dmxreplay-player.service, this process is meant to run
+# indefinitely (it's a server, not "play once and stop") -- Restart=
+# on-failure here means "a crash restarts it," full stop, with none of
+# dmxreplay-player.service's "clean exit means the show finished, don't
+# restart" nuance (docs/ARCHITECTURE.md §7 Phase E's local web config UI
+# restart/shutdown actions deliberately exploit exactly this: they exit
+# non-zero to request a restart, or zero to request it stay down --
+# src/dmxreplay/control/server.py's _handle_restart/_handle_shutdown).
+Restart=on-failure
+RestartSec=2
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dmxreplay-server
+
+[Install]
+WantedBy=multi-user.target

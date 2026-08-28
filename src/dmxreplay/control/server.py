@@ -8,11 +8,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+from typing import Callable
 
 from aiohttp import WSMsgType, web
 
 from .auth import ApiToken
+from .logbuffer import RingBufferLogHandler
 from .router import CommandError, CommandRouter, UnknownCommandError
+from .webui import _with_token, render_config_page, render_logs_page, render_message_page
 
 logger = logging.getLogger("dmxreplay.control")
 
@@ -31,9 +35,35 @@ class ControlServer:
     `aiohttp.test_utils` in tests. `token=None` disables authentication
     entirely (local dev only -- never the default; see auth.py)."""
 
-    def __init__(self, router: CommandRouter, token: ApiToken | None) -> None:
+    def __init__(
+        self, router: CommandRouter, token: ApiToken | None, *,
+        device_name: str = "DMXReplay", dmxreplay_version: str = "0.1.0-dev",
+        exit_fn: Callable[[int], None] | None = None,
+        log_handler: RingBufferLogHandler | None = None,
+    ) -> None:
         self.router = router
         self.token = token
+        self.device_name = device_name
+        self.dmxreplay_version = dmxreplay_version
+        # Injectable so tests can assert "restart called exit(1)" without
+        # actually terminating the test process -- os._exit (not sys.exit)
+        # is the real default: sys.exit()/SystemExit raised inside an
+        # asyncio Task is caught by the task machinery and reported as an
+        # unhandled exception rather than terminating the interpreter, so
+        # it would silently fail to actually restart/shut down anything.
+        self._exit_fn = exit_fn or os._exit
+        self.log_handler = log_handler or RingBufferLogHandler()
+        dmxreplay_logger = logging.getLogger("dmxreplay")
+        dmxreplay_logger.addHandler(self.log_handler)
+        # A logger with no level explicitly set defers to its ancestors,
+        # all the way up to the root logger's default of WARNING -- a real
+        # bug this test suite caught: without this, INFO-level messages
+        # (including this module's own "restart requested" logging) never
+        # reached the ring buffer at all, silently making /config/logs far
+        # less useful than intended.
+        if dmxreplay_logger.level == logging.NOTSET or dmxreplay_logger.level > logging.INFO:
+            dmxreplay_logger.setLevel(logging.INFO)
+
         self._ws_clients: set[web.WebSocketResponse] = set()
         self._broadcast_task: asyncio.Task | None = None
 
@@ -43,6 +73,14 @@ class ControlServer:
         app.router.add_get("/api/v1/shows", self._handle_shows)
         app.router.add_post("/api/v1/command", self._handle_command)
         app.router.add_get("/api/v1/ws", self._handle_ws)
+        # Local web config UI (extension brief §7/§18) -- docs/MOBILE_API.md
+        # doesn't cover these; they serve HTML, not the JSON command
+        # protocol, and are meant for a human with a browser, not an app.
+        app.router.add_get("/config", self._handle_config_page)
+        app.router.add_post("/config", self._handle_config_submit)
+        app.router.add_post("/config/restart", self._handle_restart)
+        app.router.add_post("/config/shutdown", self._handle_shutdown)
+        app.router.add_get("/config/logs", self._handle_logs)
         app.on_startup.append(self._on_startup)
         app.on_cleanup.append(self._on_cleanup)
         self.app = app
@@ -53,13 +91,21 @@ class ControlServer:
         if self.token is None:
             return True
         header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            return False
-        return self.token.matches(header[len("Bearer "):])
+        if header.startswith("Bearer ") and self.token.matches(header[len("Bearer "):]):
+            return True
+        # /config* only: also accept ?token=... -- a human typing a URL
+        # into a browser can't easily set a custom header, unlike the JSON
+        # API (docs/MOBILE_API.md §4), where a query-string token is
+        # deliberately rejected (it leaks into logs/history far more
+        # readily). Scoped to /config* specifically, not a blanket
+        # allowance, and documented here as the one deliberate exception
+        # to that rule rather than an inconsistency.
+        if request.path.startswith("/config") and self.token.matches(request.query.get("token")):
+            return True
+        return False
 
     @web.middleware
     async def _auth_middleware(self, request: web.Request, handler):
-        # /version is the one endpoint a client needs before it has a
         # /version needs no token at all (to confirm it's even talking to a
         # DMXReplay server, and which API version). /ws is also exempt HERE
         # -- not because it skips auth, but because it authenticates a
@@ -103,6 +149,87 @@ class ControlServer:
         if not isinstance(body, dict) or not isinstance(body.get("command"), str):
             return _error("body must be {'command': str, 'params'?: object}", 400)
         return await self._dispatch_to_response(body["command"], body.get("params") or {})
+
+    # --- Local web config UI (extension brief §7/§18) ---------------------------
+
+    def _request_token(self, request: web.Request) -> str | None:
+        """The token to embed in the rendered page's links/forms, so
+        continued navigation stays authenticated -- only meaningful when
+        this request itself was authenticated via ?token= (see
+        _http_authorized); a header-authenticated request has no token to
+        carry forward into a browser's next navigation anyway."""
+        return request.query.get("token")
+
+    async def _handle_config_page(self, request: web.Request) -> web.Response:
+        token = self._request_token(request)
+        try:
+            status = await self.router.dispatch("GET_STATUS")
+            config = await self.router.dispatch("GET_CONFIG")  # already merges network settings, router.py
+        except CommandError as exc:
+            return web.Response(
+                text=render_message_page(title="DMXReplay -- not ready", message=str(exc), token=token),
+                content_type="text/html", status=409,
+            )
+        body = render_config_page(
+            device_name=self.device_name, dmxreplay_version=self.dmxreplay_version,
+            status=status, config=config, network=config, token=token,
+        )
+        return web.Response(text=body, content_type="text/html")
+
+    async def _handle_config_submit(self, request: web.Request) -> web.Response:
+        token = self._request_token(request)
+        data = await request.post()
+        params: dict = {"loop": "loop" in data}
+        if data.get("speed"):
+            params["speed"] = float(data["speed"])
+        params["fps"] = float(data["fps"]) if data.get("fps") else None
+        if data.get("protocol"):
+            params["protocol"] = data["protocol"]
+            params["interface_ip"] = data.get("interface_ip") or "0.0.0.0"
+            params["destination_ip"] = data.get("destination_ip") or None
+            params["port"] = int(data["port"]) if data.get("port") else None
+            params["priority"] = int(data["priority"]) if data.get("priority") else 100
+        try:
+            await self.router.dispatch("SET_CONFIG", params)
+        except (CommandError, ValueError) as exc:
+            return web.Response(
+                text=render_message_page(title="DMXReplay -- could not apply settings", message=str(exc), token=token),
+                content_type="text/html", status=409,
+            )
+        raise web.HTTPFound(_with_token("/config", token))
+
+    async def _handle_restart(self, request: web.Request) -> web.Response:
+        """Stops services cleanly, then exits with a NON-ZERO status so
+        the systemd unit's Restart=on-failure policy (docs/RASPBERRY_PI_INSTALL.md
+        §4, packaging/systemd/dmxreplay-player.service) brings the process
+        back -- not systemctl restart (would need elevated permissions
+        this process shouldn't assume it has), and not sys.exit() (see the
+        __init__ docstring note on why that's silently wrong inside
+        asyncio)."""
+        logger.info("Restart requested via local web config UI")
+        await self._shutdown_services()
+        self._exit_fn(1)
+        return web.Response(text="restarting")
+
+    async def _handle_shutdown(self, request: web.Request) -> web.Response:
+        """Same mechanism as restart, but exits 0 -- systemd's
+        Restart=on-failure does NOT trigger on a clean exit, matching
+        "safe shutdown"'s intent exactly (docs/RASPBERRY_PI_INSTALL.md §4)."""
+        logger.info("Safe shutdown requested via local web config UI")
+        await self._shutdown_services()
+        self._exit_fn(0)
+        return web.Response(text="shutting down")
+
+    async def _shutdown_services(self) -> None:
+        if self.router.player is not None:
+            await self.router.player.shutdown()
+        if self.router.recorder is not None:
+            await self.router.recorder.shutdown()
+
+    async def _handle_logs(self, request: web.Request) -> web.Response:
+        token = self._request_token(request)
+        body = render_logs_page(device_name=self.device_name, lines=self.log_handler.lines(), token=token)
+        return web.Response(text=body, content_type="text/html")
 
     # --- WebSocket -------------------------------------------------------------
 

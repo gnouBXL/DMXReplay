@@ -123,7 +123,7 @@ same core engine and `.dmxr` format, unchanged. See
 | B | Raspberry Pi ARM64/headless foundation | ✅ config loader + systemd unit verified; real Pi hardware unverified |
 | C | Long-running commandable Player/Recorder service | ✅ |
 | D | Control API (HTTP + WebSocket) | ✅ |
-| E | Raspberry Pi configuration + discovery | planned |
+| E | Raspberry Pi configuration + discovery | ✅ |
 | F | Mobile remote controller | planned |
 | G | Show management + file transfer | planned |
 | H | Performance/hardware validation | planned |
@@ -186,7 +186,11 @@ Runs an HTTP + WebSocket API for remote control (play/pause/seek/next/previous/r
 status) — the foundation the smartphone remote controller (Phase F) talks to. The
 device's own master timeline always drives real-time playback; a connected client
 never becomes part of that loop, and playback continues unaffected if it disconnects.
-See [docs/API.md](docs/API.md) §10 for the Python side and
+Advertises itself via mDNS as `DMXReplay-<name>` (`--no-mdns` to disable) and serves a
+local web config UI at `/config` (auth via `?token=...`) for first-time/no-app setup —
+see [docs/NETWORKING.md](docs/NETWORKING.md) for discovery and
+[docs/RASPBERRY_PI_INSTALL.md](docs/RASPBERRY_PI_INSTALL.md) for the full Raspberry Pi
+appliance flow. See [docs/API.md](docs/API.md) §10 for the Python side and
 [docs/MOBILE_API.md](docs/MOBILE_API.md) for the full wire protocol.
 
 ## License

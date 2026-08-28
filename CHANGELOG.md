@@ -6,6 +6,42 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase E: Raspberry Pi discovery + local web config UI
+- `dmxreplay.control.discovery`: `DeviceAdvertiser` (mDNS advertisement as
+  `DMXReplay-<name>._dmxreplay._tcp.local.` via `zeroconf`, TXT records for
+  `api_version`/`auth_required`) and `discover_devices()` (a reference client).
+  Real advertise+discover round trip confirmed working end-to-end in this project's
+  own environment (`tests/test_discovery.py`), not assumed. Full protocol,
+  ports, and known real-world multicast pitfalls (AP isolation, VLANs) documented in
+  new `docs/NETWORKING.md`.
+- `dmxreplay.control.webui`: a local web configuration UI (`GET/POST /config`,
+  `POST /config/restart`, `POST /config/shutdown`, `GET /config/logs`) -- plain
+  server-rendered HTML forms, no JS framework, for first-time/no-screen setup (the
+  mobile app, Phase F, remains the preferred interface once it exists). Playback/
+  output settings apply live through the same `SET_CONFIG` command the JSON API
+  uses. Restart/shutdown work by choosing a deliberate process exit code
+  (`os._exit(1)`/`os._exit(0)`, injectable in `ControlServer` so tests can assert
+  the right one without killing the test process) that the systemd unit's
+  `Restart=on-failure` policy does or doesn't act on -- never by shelling out to
+  `systemctl`, which this process shouldn't assume it has permission to do.
+- New `packaging/systemd/dmxreplay-server.service` -- the real production unit for
+  the extension brief's target architecture (stays running as a server; unlike
+  `dmxreplay-player.service`, it does not exit when a show finishes).
+  `systemd-analyze verify`-clean against a real install, same as the existing unit.
+  `packaging/raspberrypi/install.sh` now installs both units and the `[control]`
+  extra; `dmxreplay-server` remains the one you actually enable for smartphone
+  control, `dmxreplay-player` stays available for simple play-straight-through use.
+- 24 new tests, all real: mDNS, HTML-escaping (including one caught double-escape
+  bug in how the auth token gets threaded through page links), and live HTTP routes
+  against `aiohttp`'s own test server.
+- **A real bug found by testing, not inspection**: the log ring buffer's logger had
+  no level explicitly set, so `/config/logs` silently showed nothing -- Python
+  loggers default to `WARNING`, filtering out the `INFO`-level status messages
+  before they ever reached the buffer. Fixed by raising the `"dmxreplay"` logger's
+  level when `ControlServer` attaches its handler.
+- `docs/RASPBERRY_PI_INSTALL.md`, `docs/API.md` §10, `docs/MOBILE_API.md`,
+  `docs/ARCHITECTURE.md`, `README.md` updated.
+
 ### Added — Cross-platform extension Phase D: Control API (HTTP + WebSocket)
 - `src/dmxreplay/control`: `CommandRouter` (transport-agnostic dispatch for all 14
   commands the extension brief lists -- GET_STATUS/GET_SHOWS/LOAD_SHOW/PLAY/PAUSE/

@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import sys
 
 from aiohttp import web
 
 from ..config import PlayerConfig
-from ..control import ApiToken, CommandRouter, ControlServer
+from ..control import API_VERSION, ApiToken, CommandRouter, ControlServer
+from ..control.discovery import DeviceAdvertiser
 from ..service import PlayerService, RecorderService
 
 DEFAULT_TOKEN_FILENAME = ".dmxreplay-token"
@@ -51,6 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enable-recorder", action="store_true",
         help="Also expose RECORD_START/RECORD_STOP over a RecorderService",
+    )
+    p.add_argument(
+        "--device-name", default=None,
+        help="Name shown to clients and advertised via mDNS as 'DMXReplay-<name>' "
+             "(default: this machine's hostname, extension brief §19)",
+    )
+    p.add_argument(
+        "--no-mdns", action="store_true",
+        help="Disable mDNS advertisement -- clients can still connect directly by IP",
     )
     return p
 
@@ -93,6 +104,7 @@ def _build_token(args: argparse.Namespace) -> ApiToken | None:
 def main() -> None:
     args = build_parser().parse_args()
     player, recorder = _build_services(args)
+    device_name = args.device_name or socket.gethostname()
 
     autoplay = False
     if args.config:
@@ -103,13 +115,29 @@ def main() -> None:
 
     token = _build_token(args)
     router = CommandRouter(player_service=player, recorder_service=recorder)
-    server = ControlServer(router, token=token)
+    server = ControlServer(router, token=token, device_name=device_name)
+
+    advertiser = None if args.no_mdns else DeviceAdvertiser(
+        device_name, args.port, api_version=API_VERSION, auth_required=token is not None,
+    )
 
     async def _startup_play(app: web.Application) -> None:
         if autoplay:
             await player.play()
+        if advertiser is not None:
+            try:
+                await advertiser.start()
+                print(f"Advertising via mDNS as DMXReplay-{device_name} (docs/MOBILE_API.md)", file=sys.stderr)
+            except OSError as exc:
+                # Never let a network/multicast problem stop the actual
+                # DMX service from starting -- discovery is a convenience,
+                # not a requirement (docs/ARCHITECTURE.md §5; connecting
+                # by IP always works regardless).
+                print(f"mDNS advertisement failed (continuing without it): {exc}", file=sys.stderr)
 
     async def _shutdown_services(app: web.Application) -> None:
+        if advertiser is not None:
+            await advertiser.stop()
         await player.shutdown()
         if recorder is not None:
             await recorder.shutdown()

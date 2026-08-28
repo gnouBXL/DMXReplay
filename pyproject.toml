@@ -52,6 +52,15 @@ control = [
     # (universal2), and Linux aarch64 (manylinux + musllinux) -- the same
     # platform set this project already depends on `av` supporting.
     "aiohttp>=3.9",
+    # mDNS advertisement/discovery (cross-platform extension Phase E,
+    # dmxreplay.control.discovery) -- the standard, most widely deployed
+    # cross-platform Python mDNS library (used by e.g. Home Assistant),
+    # not hand-rolled the way Art-Net/sACN are, since a well-maintained
+    # implementation already exists here (unlike those). Real prebuilt
+    # wheels confirmed for win_amd64, macOS, and Linux aarch64/musllinux
+    # (win_arm64 is the one gap -- noted in docs/ARCHITECTURE.md, not a
+    # blocker for the Raspberry Pi target this phase is mainly for).
+    "zeroconf>=0.130",
 ]
 dev = [
     "pytest>=7.4",
