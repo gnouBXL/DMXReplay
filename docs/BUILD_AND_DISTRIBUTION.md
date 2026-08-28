@@ -11,12 +11,13 @@ process, covered in [MOBILE.md](MOBILE.md) §8-§9 and `mobile/README.md`, not h
 
 | | Status |
 |---|---|
-| PyInstaller specs (`packaging/pyinstaller/*.spec`) | Implemented |
-| Linux onedir build | **Built and run for real** in this project's own development environment (see §3) |
+| PyInstaller specs (`packaging/pyinstaller/*.spec`) | Implemented, incl. `dmxreplay_gui.spec` (the single "Welcome to DMXReplay" launcher app end users should actually run, §3.1) |
+| Linux onedir build | **Built and run for real** in this project's own development environment, all three apps including the new launcher (see §3) |
 | Windows build script | Written, mirrors the verified Linux build, **not run on a real Windows machine** (none available in this environment) |
 | macOS build script + `.app` bundling | Written, mirrors the verified Linux build, **not run on a real Mac** (none available in this environment) |
-| Windows installer (`.msi`/Inno Setup) | Not implemented |
-| macOS `.dmg`, code signing, notarization | Not implemented |
+| Windows installer (`.msi`/Inno Setup) | **Written** (`packaging/windows/dmxreplay.iss`, standard Inno Setup syntax) — **not compiled with ISCC.exe** (no Windows/Inno Setup in this environment) |
+| macOS `.dmg` | **Written** (`packaging/build_macos.sh`'s `hdiutil` step) — **not run on a real Mac** |
+| macOS code signing, notarization | Not implemented |
 | Raspberry Pi / ARM64 packaging | Separate: [RASPBERRY_PI_INSTALL.md](RASPBERRY_PI_INSTALL.md) |
 
 Every claim below is labeled per this table — this document does not present the
@@ -74,27 +75,43 @@ broken package. The same preflight check was added to `build_windows.ps1` and
 trigger on those platforms — the failure mode it guards against is generic to any
 machine with multiple Python installs, not Linux-specific.
 
+### 3.1 The launcher app (`dmxreplay_gui.spec`) — verified with a real screenshot
+
+`dist/DMXReplay/DMXReplay` (built by `packaging/pyinstaller/dmxreplay_gui.spec`,
+`packaging/pyinstaller/launch_dmxreplay_gui.py` → `dmxreplay.ui.launcher.main`) was
+built and run the same way as §3's Player/Recorder bundles — and, further, launched
+under Xvfb with `ffmpeg -f x11grab` capturing a real screenshot of it actually
+rendering the "Welcome to DMXReplay" screen, as the standalone packaged executable
+(not `python -m dmxreplay.ui.launcher`, not the dev venv) — the same executable a
+user's double-click on `DMXReplay.app`/`DMXReplay.exe` would run. This is the
+strongest verification level anything in this document has: not just "built without
+error" but "the packaged binary genuinely draws its first screen when launched cold."
+
 ## 4. Windows build — written, not yet verified on real hardware
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 ```
 
-Mirrors the verified Linux build command-for-command (venv, `pip install -e`, the two
-`pyinstaller` invocations). The only Windows-specific choices already made:
+Mirrors the verified Linux build command-for-command (venv, `pip install -e`, the
+three `pyinstaller` invocations — `dmxreplay_gui.spec`, `player_gui.spec`,
+`recorder_gui.spec`). The only Windows-specific choices already made:
 
-- `EXE(..., console=False, ...)` in both `.spec` files, so the packaged `.exe` doesn't
+- `EXE(..., console=False, ...)` in every `.spec` file, so the packaged `.exe` doesn't
   open a console window alongside the GUI (the same setting is a harmless no-op on
   Linux/macOS, which is why one `.spec` file works for all three).
 - `[project.gui-scripts]` (not `[project.scripts]`) in `pyproject.toml` for the
   `pip install`-based entry points, for the same reason.
 
-**Not yet done**: an actual installer. The output is a folder
-(`dist\DMXReplay Player\DMXReplay Player.exe` plus its `_internal\` dependencies), not
-a single installable file. Turning that into a real Windows installer is future work —
-Inno Setup or the WiX Toolset are the standard options, neither wired up here, and
-should be validated on a real Windows machine or CI runner before being trusted for a
-release, exactly like the base build itself.
+**Installer**: `packaging/windows/dmxreplay.iss` (real, standard Inno Setup syntax) —
+`build_windows.ps1` now runs it automatically via `ISCC.exe` if Inno Setup is
+installed, producing `dist\DMXReplay-Setup.exe` (Install → Start Menu/Desktop
+shortcut → double-click DMXReplay → GUI opens, no Python/CLI involved). **Not
+compiled with a real `ISCC.exe`** — no Windows machine or Inno Setup install in this
+environment — so this is written-per-documentation, not run-and-verified, same caveat
+as the base build itself. The `.iss` script installs all three built apps (the
+launcher plus Player/Recorder directly) but only shortcuts the launcher to the
+Desktop.
 
 ## 5. macOS build — written, not yet verified on real hardware
 
@@ -109,9 +126,14 @@ folder. This branch has **not executed** anywhere this document's claims come fr
 (no macOS machine in this environment) — it is written correctly per PyInstaller's
 documentation, not verified by running it.
 
+**`.dmg` packaging**: `build_macos.sh` now stages `DMXReplay.app` with an
+`/Applications` symlink and runs `hdiutil create` to produce `dist/DMXReplay.dmg` —
+drag to Applications, double-click, done. Guarded by `[[ "$(uname -s)" == "Darwin" ]]`
+since `hdiutil` is macOS-only; **not run on a real Mac**, same caveat as everything
+else in this section.
+
 **Not yet done, and non-trivial when it is**:
 
-- **`.dmg` packaging** (`hdiutil` or a tool like `create-dmg`) — not implemented.
 - **Code signing and notarization.** Apple's Gatekeeper will warn or outright refuse
   to run an unsigned/unnotarized app downloaded from the internet. This requires an
   active Apple Developer Program membership and a real macOS machine (or macOS CI

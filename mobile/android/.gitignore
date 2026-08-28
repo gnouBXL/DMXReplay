@@ -1,0 +1,15 @@
+# Machine-specific / generated at build time -- never commit these.
+.gradle/
+local.properties
+key.properties
+build/
+app/build/
+**/*.iml
+.idea/
+captures/
+
+# gradlew / gradle-wrapper.jar / gradle-wrapper.properties are
+# DELIBERATELY NOT ignored (unlike a bare `flutter create` project's
+# default .gitignore) -- they're committed on purpose so `flutter pub get`
+# / `flutter build apk` work without the user having to run
+# `flutter create --platforms=android .` first (docs/MOBILE.md SS6).

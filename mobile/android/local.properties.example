@@ -1,0 +1,7 @@
+# Copy this file to local.properties (already gitignored -- never commit
+# the real one, it's machine-specific) and fill in real paths, OR simply
+# run `flutter pub get` once, or open this project in Android Studio --
+# both auto-generate a correct local.properties for your machine, which is
+# the easier path for most people.
+sdk.dir=/path/to/Android/sdk
+flutter.sdk=/path/to/flutter

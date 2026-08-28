@@ -1,6 +1,10 @@
-# Build the DMXReplay Player and Recorder Windows GUI apps.
-# Run from a Windows machine with Python 3.10+ installed from python.org
-# (which bundles Tkinter -- no separate install needed).
+# Build the DMXReplay (Welcome launcher), Player, and Recorder Windows GUI
+# apps, then package them into DMXReplay-Setup.exe via Inno Setup if it's
+# installed: Install -> Start Menu/Desktop shortcut -> double-click
+# DMXReplay -> GUI opens. No Python/terminal/CLI required by the end user
+# (docs/DEMO_MODE.md SS6). Run from a Windows machine with Python 3.10+
+# installed from python.org (which bundles Tkinter -- no separate install
+# needed).
 #
 # UNVERIFIED IN CI/dev sandbox: this script has not been run on a real
 # Windows machine (no Windows available in the environment that wrote it --
@@ -8,7 +12,8 @@
 # (packaging/build_linux.sh) has been run and its output executed
 # successfully; this script mirrors that same PyInstaller invocation for
 # Windows and should be validated on real hardware/CI before being trusted
-# for a release.
+# for a release. The Inno Setup step is standard, widely-used syntax
+# (packaging/windows/dmxreplay.iss), not compiled/verified here either.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
@@ -30,6 +35,10 @@ python -m venv "$RepoRoot\.venv-build"
 & "$RepoRoot\.venv-build\Scripts\pip.exe" install -r "$RepoRoot\packaging\pyinstaller\requirements.txt"
 
 & "$RepoRoot\.venv-build\Scripts\pyinstaller.exe" `
+    "$RepoRoot\packaging\pyinstaller\dmxreplay_gui.spec" `
+    --noconfirm --distpath "$RepoRoot\dist" --workpath "$RepoRoot\build"
+
+& "$RepoRoot\.venv-build\Scripts\pyinstaller.exe" `
     "$RepoRoot\packaging\pyinstaller\player_gui.spec" `
     --noconfirm --distpath "$RepoRoot\dist" --workpath "$RepoRoot\build"
 
@@ -37,10 +46,24 @@ python -m venv "$RepoRoot\.venv-build"
     "$RepoRoot\packaging\pyinstaller\recorder_gui.spec" `
     --noconfirm --distpath "$RepoRoot\dist" --workpath "$RepoRoot\build"
 
+Write-Host "Built: dist\DMXReplay\DMXReplay.exe (the Welcome launcher -- what"
+Write-Host "  the installer's Start Menu/Desktop shortcut runs)"
 Write-Host "Built: dist\DMXReplay Player\DMXReplay Player.exe"
 Write-Host "Built: dist\DMXReplay Recorder\DMXReplay Recorder.exe"
 Write-Host ""
-Write-Host "These are onedir builds (a folder, not a single .exe) -- see"
-Write-Host "docs/BUILD_AND_DISTRIBUTION.md for why, and for the still-open"
-Write-Host "installer (.msi/Inno Setup) packaging step this script does not"
-Write-Host "perform yet."
+
+# --- Installer packaging via Inno Setup, if installed ---
+$IsccCandidates = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+)
+$Iscc = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($Iscc) {
+    & $Iscc "$RepoRoot\packaging\windows\dmxreplay.iss"
+    Write-Host "Built: dist\DMXReplay-Setup.exe"
+} else {
+    Write-Host "Inno Setup (ISCC.exe) not found -- skipping installer packaging."
+    Write-Host "Install it from https://jrsoftware.org/isdl.php, then run:"
+    Write-Host "  & `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe`" packaging\windows\dmxreplay.iss"
+    Write-Host "The onedir builds above are still usable directly without an installer."
+}

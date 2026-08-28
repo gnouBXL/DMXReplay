@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Flutter's own hot-reload/observatory connection needs INTERNET in
+         debug builds even though the release manifest already declares it
+         for the app's own real use (standard Flutter template pattern,
+         merged with the main manifest automatically by Gradle). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

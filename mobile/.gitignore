@@ -13,7 +13,11 @@ build/
 *.g.dart
 *.freezed.dart
 
-# Platform folders (android/, ios/, linux/, macos/, windows/, web/) are
-# intentionally NOT present in this checkout -- generate them with
-# `flutter create .` per README.md, then apply the two platform-specific
-# permission snippets it documents, before they'd normally be committed.
+# android/ IS committed (hand-authored, incl. a real Gradle wrapper --
+# docs/MOBILE.md SS6) specifically so `flutter pub get`/`flutter build apk`
+# work without the user running `flutter create` first; its own
+# android/.gitignore covers the machine-specific bits within it
+# (local.properties, .gradle/, build/). ios/, linux/, macos/, windows/,
+# web/ are NOT present -- Phase F/J's scope is Android + iOS-later
+# (docs/MOBILE.md); generate any of those with `flutter create
+# --platforms=<platform> .` if needed.

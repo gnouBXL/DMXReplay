@@ -43,6 +43,10 @@ fi
 "$REPO_ROOT/.venv-build/bin/pip" install -r "$REPO_ROOT/packaging/pyinstaller/requirements.txt"
 
 "$REPO_ROOT/.venv-build/bin/pyinstaller" \
+    "$REPO_ROOT/packaging/pyinstaller/dmxreplay_gui.spec" \
+    --noconfirm --distpath "$REPO_ROOT/dist" --workpath "$REPO_ROOT/build"
+
+"$REPO_ROOT/.venv-build/bin/pyinstaller" \
     "$REPO_ROOT/packaging/pyinstaller/player_gui.spec" \
     --noconfirm --distpath "$REPO_ROOT/dist" --workpath "$REPO_ROOT/build"
 
@@ -50,5 +54,7 @@ fi
     "$REPO_ROOT/packaging/pyinstaller/recorder_gui.spec" \
     --noconfirm --distpath "$REPO_ROOT/dist" --workpath "$REPO_ROOT/build"
 
+echo "Built: dist/DMXReplay/DMXReplay (the Welcome launcher -- what a packaged"
+echo "  macOS/Windows build's icon runs)"
 echo "Built: dist/DMXReplay Player/DMXReplay Player"
 echo "Built: dist/DMXReplay Recorder/DMXReplay Recorder"

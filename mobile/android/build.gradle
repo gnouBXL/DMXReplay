@@ -1,0 +1,21 @@
+// Standard Flutter Android root build script -- redirects the build output
+// directory out of android/ (matches Flutter's own template convention),
+// nothing project-specific here.
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

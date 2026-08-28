@@ -7,11 +7,15 @@ audio, with an external video file, and eventually with external timecode source
 
 > **Status:** early development (V1, Phase 0–10 done: the core engine is
 > feature-complete). The cross-platform ecosystem extension (Windows/macOS desktop
-> GUIs, Raspberry Pi appliance, smartphone remote control) — Phases A–I — has also
-> landed; the one open item is Phase F's mobile app, which is code-complete but not yet
-> compiled/run (no Flutter SDK in this project's development environment) and Phase
-> H/parts of B's Pi-hardware validation, which still needs a physical Raspberry Pi. See
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full phase-by-phase status.
+> GUIs, Raspberry Pi appliance, smartphone remote control) — Phases A–J — has also
+> landed, including a GUI demo mode requiring no lighting hardware
+> ([docs/DEMO_MODE.md](docs/DEMO_MODE.md)) and no-terminal end-user packaging for
+> macOS/Windows/Android. What's still genuinely open: the Flutter mobile app and
+> Android project are code-complete but not yet compiled/run (no Flutter/Android SDK
+> in this project's development environment), and the Windows installer, macOS
+> `.dmg`, and Raspberry Pi hardware validation all still need real, physical hardware
+> to confirm. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
+> phase-by-phase status.
 > The format is not yet stable. See [CHANGELOG.md](CHANGELOG.md) and
 > [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
@@ -131,6 +135,7 @@ same core engine and `.dmxr` format, unchanged. See
 | G | Show management + file transfer | ✅ `GET_SHOW_INFO`/`DELETE_SHOW` commands + `PUT /api/v1/shows/{name}` upload endpoint |
 | H | Performance/hardware validation | ⚠️ Dev-machine matrix measured ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)); real Pi 4/5 still required for final confirmation |
 | I | Final packaging + documentation | ✅ Consistency pass across all docs; two stale pre-Phase-F predictive statements found and corrected |
+| J | *(user-requested follow-up)* GUI demo mode + no-CLI end-user packaging | ✅ Demo mode (`dmxreplay-gui`, [docs/DEMO_MODE.md](docs/DEMO_MODE.md)); macOS `.dmg`/Windows installer scripts written, unverified on real hardware; Android `android/` project committed (real Gradle wrapper, no `flutter create` needed) |
 
 `dmxreplay.ui` provides `DMXReplay Player`/`DMXReplay Recorder` desktop GUI apps
 (`dmxreplay-player-gui`/`dmxreplay-recorder-gui`), built on Tkinter (Python's own

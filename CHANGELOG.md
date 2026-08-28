@@ -6,7 +6,37 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
-### Added — Phase J (in progress): GUI demo mode, universe monitor, and a "Welcome" launcher
+### Added — Phase J (continued): macOS/Windows installers, Android project
+- New `packaging/pyinstaller/dmxreplay_gui.spec` (+ `launch_dmxreplay_gui.py`): the
+  single "Welcome to DMXReplay" launcher app end users should actually run, producing
+  `dist/DMXReplay/` (all platforms) and `dist/DMXReplay.app` (macOS). Built *and run
+  standalone* on Linux -- the packaged binary itself, not the dev venv -- and
+  screenshotted rendering its first screen via `ffmpeg x11grab`
+  (`docs/BUILD_AND_DISTRIBUTION.md` §3.1).
+- `packaging/build_macos.sh` now also stages `DMXReplay.app` with an `/Applications`
+  symlink and runs a real `hdiutil create`, producing `dist/DMXReplay.dmg` --
+  drag-to-Applications, double-click, done.
+- New `packaging/windows/dmxreplay.iss`: a real Inno Setup script producing
+  `DMXReplay-Setup.exe` (Install -> Start Menu/Desktop shortcut -> double-click
+  DMXReplay -> GUI opens). `build_windows.ps1` runs it automatically via `ISCC.exe` if
+  Inno Setup is installed. Neither this nor the macOS `.dmg` step has been run on real
+  hardware (none available in this environment).
+- New `mobile/android/`: a complete, hand-authored Flutter Android project (Groovy
+  Gradle build scripts, manifest with the permissions `docs/MOBILE.md` §6 already
+  specified, `MainActivity.kt`, resources, a placeholder launcher icon) so a developer
+  runs `flutter pub get`/`flutter build apk` directly -- no `flutter create
+  --platforms=android .` step required. Includes a **genuine Gradle wrapper**
+  (`gradle-wrapper.jar` actually produced by this environment's own real Gradle
+  8.14.3 install via its `wrapper` task, targeting Gradle 8.4 -- not a guessed
+  binary). Every XML file verified well-formed (`xml.etree.ElementTree` caught and
+  fixed several double-hyphen-in-comment syntax errors before commit); the Groovy
+  build scripts themselves were not evaluated by Gradle here (needs the real Flutter
+  SDK's plugin-loader plus an Android SDK). iOS remains ungenerated (`flutter create
+  --platforms=ios .`) -- Xcode project files are too fragile to hand-author blind.
+- `docs/BUILD_AND_DISTRIBUTION.md`, `docs/MOBILE.md`, `mobile/README.md`,
+  `mobile/.gitignore` updated to match; `docs/ARCHITECTURE.md` Phase J marked done.
+
+### Added — Phase J: GUI demo mode, universe monitor, and a "Welcome" launcher
 - `dmxreplay.dmx.DemoDMXSource`: a deterministic, no-network-needed synthetic DMX
   chase pattern, so the Recorder and Player GUIs can be explored without any real
   Art-Net/sACN hardware connected.
