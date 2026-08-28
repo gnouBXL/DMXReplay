@@ -1,17 +1,18 @@
 # API.md — DMXReplay core engine API
 
 Companion to brief §50–§53. The core engine (`src/dmxreplay/`) MUST NOT depend on any
-GUI toolkit (see [CONTRIBUTING.md](../CONTRIBUTING.md)) — GUIs (still planned) and the
-CLI (`dmxreplay-record`/`-play`/`-info`, implemented; `-convert`, stubbed) are
-consumers of this API, not the other way around. This is what makes `dmxreplay-play
---headless` on a Raspberry Pi possible without `dmxreplay.ui`
-([docs/RASPBERRY_PI.md](RASPBERRY_PI.md) §12), and keeps TouchDesigner or any other
-future host able to embed the engine directly (brief §52).
+GUI toolkit (see [CONTRIBUTING.md](../CONTRIBUTING.md)) — GUIs and the CLI
+(`dmxreplay-record`/`-play`/`-info`, implemented; `-convert`, stubbed) are consumers of
+this API, not the other way around. This is what makes `dmxreplay-play --headless` on a
+Raspberry Pi possible without `dmxreplay.ui` ([docs/RASPBERRY_PI.md](RASPBERRY_PI.md)
+§12), and keeps TouchDesigner or any other future host able to embed the engine
+directly (brief §52).
 
 Status: everything documented here is implemented (Phases 1–9) and has an explicit
 conformance test suite (Phase 10, [`tests/test_conformance.py`](../tests/test_conformance.py),
-`docs/SPECIFICATION.md` §19–§20). The only remaining V1 work is `dmxreplay.ui` itself
-(no GUI yet — the engine and CLI don't need it).
+`docs/SPECIFICATION.md` §19–§20). `dmxreplay.ui` (§8 below) — the desktop Player/Recorder
+GUIs — was added in the post-V1 cross-platform extension's Phase A
+([docs/ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -308,9 +309,9 @@ or sent back out over Art-Net/sACN (brief §8's "MUST NOT modify stored DMX valu
 `Player.set_preview_mode()`/`current_preview(row)` (§5 above) are the only integration
 point — they read whatever `Universe` is currently active at `row` under the existing
 sample-and-hold playback state and hand it to `compute_preview()`; they never feed back
-into playback, output, or recording. No GUI renders these values yet (that's
-`dmxreplay.ui`, out of scope for this headless environment) — `current_preview()` is
-usable today from a script or the future GUI layer alike.
+into playback, output, or recording. No GUI renders these values yet (§8 below's
+`dmxreplay.ui` doesn't wire preview into its status display) — `current_preview()` is
+usable today from a script or a future GUI layer alike.
 
 ## 6. `dmxreplay.clock.ClockProvider` — future timecode sources (documented, not implemented)
 
@@ -356,3 +357,74 @@ interrupted (looping). Interactive transport control while running (pause/seek f
 outside the process) is not implemented yet — `docs/RASPBERRY_PI.md` §13 explains why
 that's deferred rather than guessed at now. `dmxreplay-info` prints the parsed
 manifest as JSON; `--frames` additionally lists every frame's timestamp to stderr.
+
+## 8. `dmxreplay.ui` — desktop GUIs (implemented, cross-platform extension Phase A)
+
+```python
+class PlayerViewModel:
+    def __init__(self, loop_thread: AsyncLoopThread | None = None) -> None: ...
+    def open_file(self, path: str) -> None: ...
+    def load_external_video(self, path: str) -> None: ...
+    def configure_output(self, protocol, interface_ip, destination_ip, port, priority=100) -> None: ...
+    def play(self) -> None: ...
+    def pause(self) -> None: ...
+    def stop(self) -> None: ...
+    def seek_seconds(self, seconds: float) -> None: ...
+    def skip(self, direction: int) -> None: ...       # rewind(-1)/fast-forward(+1) by SKIP_SECONDS
+    def set_loop(self, enabled: bool) -> None: ...
+    def set_speed(self, speed: float) -> None: ...
+    def snapshot(self) -> PlayerSnapshot: ...          # everything a view needs to redraw itself
+    def shutdown(self) -> None: ...
+
+class RecorderViewModel:
+    def __init__(self, loop_thread: AsyncLoopThread | None = None) -> None: ...
+    def add_source(self, protocol: str, interface_ip: str, port: int | None = None) -> None: ...
+    def refresh_universes(self) -> list[RowInfo]: ...
+    def start(self, output_path: str) -> None: ...
+    def stop(self) -> None: ...
+    def snapshot(self) -> RecorderSnapshot: ...
+    def shutdown(self) -> None: ...
+
+class PlayerWindow:   # Tkinter -- src/dmxreplay/ui/player_app.py
+    def __init__(self, root, viewmodel: PlayerViewModel | None = None) -> None: ...
+
+class RecorderWindow: # Tkinter -- src/dmxreplay/ui/recorder_app.py
+    def __init__(self, root, viewmodel: RecorderViewModel | None = None) -> None: ...
+```
+
+`dmxreplay.ui` is split into two layers, enforcing CONTRIBUTING.md's GUI-independence
+rule *within* the GUI package itself, not just at its boundary with the core:
+
+- **`async_bridge.AsyncLoopThread`** and **`player_viewmodel.py`/`recorder_viewmodel.py`**
+  have zero Tkinter (or any GUI toolkit) import. `AsyncLoopThread` runs one asyncio
+  event loop on a background thread for the life of the GUI process — Player/Recorder
+  are asyncio-native (§4/§5), a desktop GUI mainloop is not, and the loop must never be
+  blocked waiting on a network/DMX call. Commands (`play()`/`pause()`/`seek_seconds()`/
+  etc.) are dispatched onto that background loop via `asyncio.run_coroutine_threadsafe`/
+  `loop.call_soon_threadsafe` — never called inline on the GUI thread — so they stay
+  correctly ordered against the real-time playback tick (`Player._run_loop()`, which
+  also runs on that same loop thread). `snapshot()` reads Player/Recorder's own
+  properties directly rather than round-tripping through the loop thread (see
+  `player_viewmodel.py`'s comment on why that's fine for scalar reads under the GIL
+  but never used for anything that mutates state). Fully covered without a display by
+  `tests/test_ui_player_viewmodel.py`/`test_ui_recorder_viewmodel.py`, real Art-Net
+  traffic included, run in the normal project venv.
+- **`player_app.py`/`recorder_app.py`** are the *only* files in the whole project that
+  import `tkinter` — pure presentation, wired to the view-models above via a periodic
+  `root.after()` poll (150ms/250ms) rather than a push-notification model, kept simple
+  on purpose. Real widget-construction tests live in `tests_gui/` (a separate directory,
+  deliberately outside `tests/` — Tkinter is not a pip package, so it can't be a normal
+  test dependency of the main venv; see `tests_gui/README.md` for how to run them, and
+  `docs/BUILD_AND_DISTRIBUTION.md` for why Tkinter, not a third-party GUI framework).
+
+Functional scope matches the desktop Player/Recorder spec: open `.dmxr`, play/pause/
+stop/seek/rewind/fast-forward/loop, timeline with current/total time, output protocol/
+interface/destination configuration, universe/audio/video/sync status display (Player);
+input protocol/interface selection, live detected-universe list, record/stop, output
+filename, recording duration/packet/status display (Recorder). Visual styling was
+explicitly deprioritized in favor of correctness, per the same instruction that shaped
+this whole module's structure.
+
+Entry points: `dmxreplay-player-gui` / `dmxreplay-recorder-gui`
+(`[project.gui-scripts]` in `pyproject.toml` — not `[project.scripts]`, so a packaged
+Windows build doesn't open a console window alongside the GUI).

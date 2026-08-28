@@ -1,0 +1,9 @@
+# Build-time only -- never installed for normal DMXReplay use, only when
+# packaging the desktop GUI apps. See docs/BUILD_AND_DISTRIBUTION.md.
+pyinstaller>=6.0
+# Community-maintained PyInstaller hooks, including hook-av.py -- collects
+# PyAV's bundled ffmpeg shared libraries automatically. Without this, a
+# packaged build would fail at runtime the first time it tries to decode/
+# encode a .dmxr file, not at build time -- verified present and used in
+# this project's own Linux build (docs/BUILD_AND_DISTRIBUTION.md).
+pyinstaller-hooks-contrib>=2024.0

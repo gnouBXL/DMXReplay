@@ -6,6 +6,54 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase A: Desktop GUIs + packaging
+- `src/dmxreplay/ui`: real, functional `DMXReplay Player`/`DMXReplay Recorder` desktop
+  GUI apps (Tkinter — Python's own stdlib GUI toolkit, zero new pip dependency),
+  entry points `dmxreplay-player-gui`/`dmxreplay-recorder-gui`
+  (`[project.gui-scripts]`, so a packaged Windows build opens no console window).
+  Split into `async_bridge.AsyncLoopThread` + `player_viewmodel.py`/
+  `recorder_viewmodel.py` (zero Tkinter import, all DMX/network logic delegated to
+  `Player`/`Recorder`, commands dispatched onto one persistent background asyncio
+  loop so they stay correctly ordered against the real-time playback tick) and
+  `player_app.py`/`recorder_app.py` (the only files that import `tkinter` at all).
+  Covers the desktop GUI functional spec: open/play/pause/stop/seek/rewind/
+  fast-forward/loop/timeline for the Player; input selection/universe detection/
+  record/stop/status for the Recorder.
+- `Player` gains no new methods for this — `set_loop`/`seek`/etc. were all already
+  there; the GUI is purely a new consumer of the existing API, per
+  CONTRIBUTING.md's GUI-independence rule.
+- Real test coverage at two levels: `tests/test_ui_player_viewmodel.py`/
+  `test_ui_recorder_viewmodel.py` (real Art-Net traffic through the real async
+  bridge, in the normal project venv, no display needed) and `tests_gui/`
+  (real `tk.Tk()` widget construction/wiring, run separately under Xvfb since
+  Tkinter isn't a pip package — see `tests_gui/README.md`).
+- **Two real bugs found and fixed while building this, not by inspection**: (1) the
+  view-models' `shutdown()` originally submitted the final `player.stop()`/
+  `recorder.close()` coroutine fire-and-forget and then immediately stopped the
+  background event loop, racing the loop shutdown against the coroutine actually
+  finishing — `asyncio: Task was destroyed but it is pending!` on every test run.
+  Fixed by blocking briefly on the coroutine's result before stopping the loop. (2)
+  the first version of `packaging/build_linux.sh` used the machine's default
+  `python3`, which on this multi-Python-version development machine has no Tkinter
+  bound to it (a *different* Python version does) — PyInstaller did not error at
+  build time, it silently shipped a package that crashed with `ModuleNotFoundError:
+  No module named 'tkinter'` the moment it was actually run. Fixed with an explicit
+  `import tkinter` preflight check in all three build scripts that refuses to build
+  rather than ship a broken package silently.
+- `packaging/pyinstaller/{player,recorder}_gui.spec` + `_common.py` +
+  `requirements.txt`, `packaging/build_{linux,macos}.sh` + `build_windows.ps1`.
+  **Linux build verified for real**: built via PyInstaller 6.22.2 with
+  `pyinstaller-hooks-contrib` (its `hook-av.py` collects PyAV's bundled ffmpeg
+  shared libraries automatically), and the resulting onedir executables were
+  launched under Xvfb and ran cleanly to a timeout with no error — a genuinely
+  working packaged build, ~141MB (dominated by PyAV's ffmpeg libraries). Windows/
+  macOS scripts mirror that exact verified sequence but have **not** been run on
+  real hardware (none available in this environment) — labeled as such, not
+  claimed as verified. Installer (`.msi`)/`.dmg`+notarization are explicitly not
+  implemented yet.
+- New `docs/BUILD_AND_DISTRIBUTION.md`; `docs/API.md` §8 documents `dmxreplay.ui`;
+  `docs/ARCHITECTURE.md` §7 updated with Phase A's real status.
+
 ### Added — Phase 10: Conformance test suite
 - `tests/test_conformance.py`: explicit tests mapped to `SPECIFICATION.md` §20's three
   conformance roles (Reader/Recorder/Player) and the remaining official test vectors

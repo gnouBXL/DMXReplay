@@ -265,45 +265,50 @@ this now, before any mobile code exists, is cheaper than discovering it mid-buil
 
 ## 7. Proposed phased plan
 
-Adapting the extension brief's own suggested order (§32) to this audit's findings —
-mainly: Phase A and B are smaller than the brief assumes (§1 already established the
-dependency story is clean), and Phase C is smaller too (§1 already established most of
-what it needs). Each phase is scoped to be independently shippable and independently
-testable, consistent with how Phases 0–10 were run.
+**Approved and in progress.** The user confirmed this order (with Phase A widened to
+include the desktop GUI apps themselves, not just their packaging — see §7's Phase A
+row) and gave the go-ahead to implement. Status is tracked here as each phase lands;
+this table is a living document, updated in place rather than rewritten each time
+(same convention as `docs/RASPBERRY_PI.md`'s "Update, Phase N:" annotations).
 
-| Phase | Scope | Why this order |
+| Phase | Scope | Status |
 |---|---|---|
-| **A** | Cross-platform packaging: verify (don't just assume) `pip install -e ".[dev]"` and the full test suite pass on a real Windows and a real macOS machine/CI runner; add PyInstaller specs for `dmxreplay-record`/`dmxreplay-play` as `.exe`/`.app`; `docs/BUILD_AND_DISTRIBUTION.md` | Cheapest phase — no new code, just verification + a packaging spec, on top of an already-portable core (§1). Surfaces any real Windows/macOS surprise (§6's unverified items) before anything else is built on top. |
-| **B** | Raspberry Pi ARM64: same verification, on actual Pi 4 and Pi 5 hardware — the real numbers §6 says this sandbox cannot produce; `.deb`/tarball packaging | Needs physical hardware access (external dependency); do this early since Phase D/E's whole point is controlling a Pi, and everything after this phase should be validated against a real device, not just aarch64-in-theory. |
-| **C** | Headless Raspberry Pi Player: build the missing control surface identified in §3.1 — a long-running process wrapping `Player`/`Recorder` that can be commanded (not the network API itself yet, just the in-process command surface + a config-file loader for `RASPBERRY_PI.md` §14's proposed TOML shape + the systemd unit) | Small, and everything in Phases D–I depends on this existing first — there is currently *no* way to control a running Player at all, locally or remotely. |
-| **D** | Network Control API: HTTP/WebSocket service (proposed module: `dmxreplay.control`, new CLI `dmxreplay-server` or an extended `dmxreplay-play --serve`) over Phase C's command surface; `docs/MOBILE_API.md`; discovery (mDNS/Zeroconf); minimal pairing/auth (brief §20) | This is the real architectural fork point. Building it before any mobile UI exists means it can be tested with `curl`/a WebSocket test client and the existing test-suite discipline, exactly like every prior phase. |
-| **E** | Smartphone Remote Controller: native or cross-platform (Flutter recommended — see §6's reasoning: no on-device DMX decode needed in this mode, so the cross-platform-framework risk doesn't apply) app implementing brief §13's UI, talking only to Phase D's API | First mobile code, but structurally low-risk because it's a thin client — no real-time DMX handling on-device at all. |
-| **F** | Show management / file transfer: show-library abstraction in the Core (§3.3), upload endpoint in the Control API, transfer UI in the mobile app | Depends on D (API) and benefits from E (UI) existing to actually exercise it end-to-end. |
-| **G** | Mobile standalone Recorder/Player: **evaluate first, build only if the evaluation says so.** Per §6, the likely outcome is "not attempted for this extension's V1" with the reasoning documented in `docs/MOBILE.md`, rather than an unreliable feature shipped and later pulled. If any platform's evaluation is genuinely positive (e.g., Android foreground-service UDP reception proves reliable enough in real testing), scope that platform only — never force iOS to match if it can't. | Explicitly last among the "build" phases per the brief's own §32 instruction not to attempt this before D/E are validated. |
-| **H** | Performance optimization: the real Pi 4/5 measurements from Phase B, now under the full matrix brief §25 asks for (1/10/50/128 universes × DMX/+audio/+video/+audio+video; CPU/RAM/throughput/timing/latency/packet loss/dropped frames/drift/boot time/failure recovery) | Needs Phase B's hardware access and Phase C/D's running service to measure against something realistic, not a synthetic CLI run. |
-| **I** | Autonomous appliance deployment: the brief §34 final acceptance scenario end-to-end, `docs/RASPBERRY_PI_INSTALL.md`, first-boot/local-web-config flow (brief §18) | Integration of everything above; the actual "does the whole product work" milestone. |
+| **A** | Cross-platform packaging + desktop GUIs: `dmxreplay.ui` (Tkinter) Player/Recorder GUI apps per the desktop GUI spec, wired to `Player`/`Recorder` via toolkit-independent view-models; PyInstaller specs; `docs/BUILD_AND_DISTRIBUTION.md` | ✅ **Done.** GUI apps built and unit/widget-tested (`tests/test_ui_*.py`, `tests_gui/`). Linux onedir packaging built and run for real (`packaging/build_linux.sh`, verified — see `docs/BUILD_AND_DISTRIBUTION.md` §3, including one real bug found and fixed: a Tkinter/Python-version mismatch that silently produced a broken package). Windows/macOS build scripts written, mirroring the verified Linux command exactly, but **not run on real hardware** — no Windows/macOS machine in this environment. Installer (`.msi`)/`.dmg`+signing are explicitly not done yet (§4/§5 there). |
+| **B** | Raspberry Pi ARM64/headless foundation: config-file loader for `RASPBERRY_PI.md` §14's proposed TOML shape, a real systemd unit, install script | Next |
+| **C** | Long-running commandable Player/Recorder service: the control surface `RASPBERRY_PI.md` §13 already identified as missing — a persistent process wrapping `Player`/`Recorder` that stays alive and accepts new commands after `play()` returns | Planned |
+| **D** | Control API (HTTP + WebSocket) over Phase C's service; `docs/MOBILE_API.md`; must never contain the real-time DMX loop itself | Planned |
+| **E** | Raspberry Pi configuration + discovery: mDNS/Zeroconf advertisement, a lightweight local web config UI (network/Art-Net/sACN/playback/system settings) | Planned |
+| **F** | Mobile remote controller: cross-platform app (Flutter recommended, §6) talking only to Phase D's API — browse/select/play/pause/seek/next/previous/record/status, never on-device DMX decode | Planned |
+| **G** | Show management + file transfer: show-library abstraction, browse/select/delete/info via the Control API, upload from client to Pi | Planned |
+| **H** | Performance / hardware validation: the full matrix (1/10/50/128 universes × DMX/+audio/+video/+audio+video) on real Pi 4/5 where possible; a hardware validation checklist where it isn't | Planned |
+| **I** | Final packaging + documentation pass across all new docs (`ARCHITECTURE.md`, `API.md`, `RASPBERRY_PI.md`, `RASPBERRY_PI_INSTALL.md`, `MOBILE.md`, `MOBILE_API.md`, `NETWORKING.md`, `BUILD_AND_DISTRIBUTION.md`) | Planned |
 
-`docs/NETWORKING.md` and `docs/ARCHITECTURE.md` (this file) are living documents updated
-across Phases C–E rather than written once at the end.
+**Mobile standalone record/playback** (§6's evaluation) is deliberately *not* one of
+these nine lettered phases — the user confirmed it stays a documented future/
+experimental capability, evaluated but not built for this extension's V1 unless a
+reliably implementation becomes apparent, consistent with §6's own conclusion. It will
+be revisited, if at all, after Phase F, in `docs/MOBILE.md`.
 
-## 8. Open questions before starting
+`docs/NETWORKING.md` and this file are living documents updated across Phases B–E
+rather than written once at the end.
 
-Per this audit's own §6 findings, a few decisions genuinely need a human call before
-Phase A begins, rather than being assumed:
+## 8. Open questions — resolved
 
-1. **Physical hardware access.** Phase B and Phase H cannot be honestly completed
-   without real Raspberry Pi 4/5 units (and ideally a real Windows/macOS machine or CI
-   runner for Phase A) — this sandbox has none. Confirm what's available.
-2. **Mobile framework choice for Phase E.** §6 recommends Flutter (thin client, no
-   on-device DMX/FFV1 dependency, one codebase for iOS+Android) over React Native or
-   fully native — open to a different call if there's a project preference.
-3. **Mobile standalone (Phase G) risk tolerance.** This audit's default recommendation
-   is "evaluate, document the reasoning, likely don't ship it" per §6 — confirm that's
-   acceptable before any Phase G work is scheduled, since it's a partial answer to
-   brief §10–§12's explicit ask.
+The four questions raised when this audit was first written (§8, prior revision) have
+been answered by the user directly:
+
+1. **Physical hardware access**: none available in this environment. Confirmed:
+   proceed with everything *except* what genuinely requires physical Pi/Windows/macOS
+   hardware, mark those items clearly rather than blocking on them (§18 of the
+   extension brief), and produce a hardware validation checklist (Phase H) for later.
+2. **Mobile framework for Phase F**: proceed with this audit's Flutter recommendation
+   (§6) — not explicitly overridden.
+3. **Mobile standalone risk tolerance**: confirmed — stays future/experimental, not a
+   blocking V1 requirement, architecture kept open for it (§6 above).
 4. **Distribution channel for the mobile app** (App Store/Play Store vs.
-   sideload/TestFlight/enterprise) — affects how much Phase E/G work is worth investing
-   relative to review/policy risk (§6).
+   sideload/TestFlight/enterprise) — still genuinely open, not addressed by the user's
+   reply; revisit before Phase F work goes far enough that it matters (affects how much
+   is worth investing relative to review/policy risk, §6).
 
 This document should be updated as each phase actually lands, the same way
 `docs/RASPBERRY_PI.md` was updated with "Update, Phase N:" annotations rather than

@@ -48,6 +48,15 @@ dmxreplay-play = "dmxreplay.cli.play:main"
 dmxreplay-info = "dmxreplay.cli.info:main"
 dmxreplay-convert = "dmxreplay.cli.convert:main"
 
+[project.gui-scripts]
+# gui-scripts (not scripts): on Windows this launches without an attached
+# console window, the correct behavior for a GUI app -- see
+# docs/BUILD_AND_DISTRIBUTION.md. Requires Tkinter (python.org installers
+# on Windows/macOS ship it; `apt install python3-tk` on Debian/Pi) --
+# not part of `dependencies` since it's stdlib, not a pip package.
+dmxreplay-player-gui = "dmxreplay.ui.player_app:main"
+dmxreplay-recorder-gui = "dmxreplay.ui.recorder_app:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
