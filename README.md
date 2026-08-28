@@ -112,6 +112,10 @@ explicit conformance test suite (`tests/test_conformance.py`,
 conformance roles and all 10 official test vectors; `dmxreplay.ui` is the only
 V1 scope left.
 
+**Post-V1 direction:** extending DMXReplay into a cross-platform ecosystem (Windows,
+macOS, Raspberry Pi appliance, smartphone remote control) is being planned — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the architectural audit and phased plan.
+
 ## Getting started (development)
 
 ```bash
