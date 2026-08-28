@@ -7,6 +7,7 @@ without dmxreplay.ui (docs/RASPBERRY_PI.md §12/§13).
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -14,10 +15,11 @@ from typing import Literal
 from ..clock import MasterClock
 from ..codec import ENCODINGS, Encoding
 from ..container import STORAGE_TIMESTAMP_RESOLUTION_NS, DMXReplayWriter
-from ..dmx import DMXEngine, RowInfo
+from ..dmx import DemoDMXSource, DMXEngine, RowInfo
 from ..metadata import Manifest, UniverseMapping
 from ..network.artnet import ARTNET_PORT, ArtNetListener
 from ..network.sacn import SACN_PORT, SACNListener
+from ..preview import PreviewMode, compute_preview
 from .status import RecorderStatus
 
 RECORDER_NAME = "dmxreplay-recorder"
@@ -47,6 +49,7 @@ class Recorder:
         self._recording = False
         self._frame_count = 0
         self._start_ns: int | None = None
+        self._demo_task: asyncio.Task | None = None
 
     async def add_source(
         self,
@@ -74,6 +77,58 @@ class Recorder:
             self._sacn_listeners.append(listener)
         else:
             raise ValueError(f"Unknown protocol {protocol!r}")
+
+    def add_demo_source(self, universe_count: int = 4, fps: float = 30.0) -> None:
+        """A synthetic, no-network DMX source (`DemoDMXSource`) for
+        exploring the Recorder without real Art-Net/sACN hardware
+        connected. Feeds `DMXEngine.update_artnet()` directly from a real,
+        ticking `asyncio` task at a real cadence -- the identical engine
+        code path a real `ArtNetListener` callback would exercise, just
+        without a socket underneath, so `get_universes()`/recording/preview
+        all behave exactly as they would for a real source. At most one
+        demo source at a time; calling this again while one is already
+        running is a no-op (matching `add_source()`'s "call multiple times
+        for multiple real sources" being additive, not this -- one
+        synthetic source is enough to demonstrate the pipeline)."""
+        if self._demo_task is not None:
+            return
+        source = DemoDMXSource(universe_count)
+
+        async def _run() -> None:
+            period = 1.0 / fps
+            try:
+                while True:
+                    for row, universe in enumerate(source.tick()):
+                        frame = self._engine.update_artnet(
+                            net=0, subnet=0, universe=row, data=universe.to_bytes(),
+                            timestamp_ns=self._clock.now_ns(), source_ip="demo",
+                        )
+                        self._maybe_commit(frame)
+                    await asyncio.sleep(period)
+            except asyncio.CancelledError:
+                pass
+
+        self._demo_task = asyncio.ensure_future(_run())
+
+    def remove_demo_source(self) -> None:
+        if self._demo_task is not None:
+            self._demo_task.cancel()
+            self._demo_task = None
+
+    @property
+    def has_demo_source(self) -> bool:
+        return self._demo_task is not None
+
+    def current_preview(self, row: int, mode: PreviewMode = "raw"):
+        """The current DMX state at `row` (real or demo source alike),
+        transformed per `mode` (`dmxreplay.preview`) -- for a live
+        "universe monitor" UI. Returns None if `row` isn't active yet.
+        Purely cosmetic, like `Player.current_preview()`: never affects
+        what's stored or (for a real source) received."""
+        frame = self._engine.current_frame(self._clock.now_ns())
+        if row >= len(frame.universes):
+            return None
+        return compute_preview(frame.universes[row], mode)
 
     def _on_artnet_packet(self, packet, source_ip: str, timestamp_ns: int) -> None:
         frame = self._engine.update_artnet(
@@ -183,8 +238,10 @@ class Recorder:
         )
 
     async def close(self) -> None:
-        """Stop recording (if active) and close every network listener."""
+        """Stop recording (if active) and close every network listener (and
+        the demo source's task, if one is running)."""
         self.stop()
+        self.remove_demo_source()
         for listener in self._artnet_listeners:
             listener.stop()
         for listener in self._sacn_listeners:

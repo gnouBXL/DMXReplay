@@ -22,6 +22,7 @@ class RecorderSnapshot:
     output_path: str | None
     status_text: str
     error_text: str | None
+    has_demo_source: bool
 
 
 class RecorderViewModel:
@@ -62,6 +63,31 @@ class RecorderViewModel:
     def refresh_universes(self) -> list[RowInfo]:
         return self._recorder.get_universes()
 
+    def add_demo_source(self, universe_count: int = 4, fps: float = 30.0) -> None:
+        """A synthetic, no-hardware-needed input (`Recorder.add_demo_source()`)
+        -- lets a user explore/record with the Recorder GUI without a real
+        Art-Net/sACN source connected. Dispatched via `call_soon`, not
+        called directly: `Recorder.add_demo_source()` starts an `asyncio`
+        task internally (`asyncio.ensure_future`), which needs the
+        background loop thread as its current running loop -- calling it
+        straight from the GUI thread (which has no running loop at all)
+        would raise, exactly the class of bug `AsyncLoopThread`'s own
+        docstring warns never to do."""
+        self._loop_thread.call_soon(lambda: self._recorder.add_demo_source(universe_count, fps))
+        self._status_text = f"Demo source active -- {universe_count} simulated universe(s)"
+        self._notify()
+
+    def remove_demo_source(self) -> None:
+        self._loop_thread.call_soon(self._recorder.remove_demo_source)
+        self._status_text = "Demo source stopped."
+        self._notify()
+
+    def current_preview(self, row: int, mode: str = "raw"):
+        """The current DMX state at `row` (real or demo source), for a live
+        "universe monitor" widget -- purely cosmetic, mirrors
+        `Recorder.current_preview()`; never affects recording."""
+        return self._recorder.current_preview(row, mode)
+
     # --- Recording control ---------------------------------------------------
 
     def start(self, output_path: str) -> None:
@@ -89,6 +115,7 @@ class RecorderViewModel:
             output_path=self._output_path,
             status_text=self._status_text,
             error_text=self._error_text,
+            has_demo_source=self._recorder.has_demo_source,
         )
 
     def shutdown(self) -> None:

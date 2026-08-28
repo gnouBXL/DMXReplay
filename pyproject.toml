@@ -85,6 +85,11 @@ dmxreplay-server = "dmxreplay.cli.server:main"
 # not part of `dependencies` since it's stdlib, not a pip package.
 dmxreplay-player-gui = "dmxreplay.ui.player_app:main"
 dmxreplay-recorder-gui = "dmxreplay.ui.recorder_app:main"
+# The single no-argument entry point a packaged app's launch icon runs
+# (DMXReplay.app / DMXReplay.exe, packaging/pyinstaller/dmxreplay-gui.spec)
+# -- a "Welcome to DMXReplay" chooser, not a third separate window class a
+# user has to already know to pick between.
+dmxreplay-gui = "dmxreplay.ui.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

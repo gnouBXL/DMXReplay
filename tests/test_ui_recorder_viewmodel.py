@@ -88,3 +88,30 @@ def test_start_before_discovery_reports_error_instead_of_raising(tmp_path):
         assert snap.status.recording is False
     finally:
         vm.shutdown()
+
+
+def test_add_demo_source_through_the_view_model_populates_universes(tmp_path):
+    """Regression test: add_demo_source()/remove_demo_source() must be
+    dispatched via the loop thread (call_soon), not called directly on the
+    GUI thread -- Recorder.add_demo_source() starts an asyncio task
+    internally, which needs a running loop as context. Calling it directly
+    from a thread with no running loop would raise; this test would catch
+    that regression by simply not being able to complete."""
+    vm = RecorderViewModel()
+    try:
+        vm.add_demo_source(universe_count=2, fps=50.0)
+        time.sleep(0.1)
+        rows = vm.refresh_universes()
+        assert len(rows) == 2
+        assert vm.snapshot().has_demo_source is True
+        assert vm.snapshot().error_text is None
+
+        preview = vm.current_preview(0, "rgb_led")
+        assert preview is not None
+        assert len(preview) == 171
+
+        vm.remove_demo_source()
+        time.sleep(0.05)
+        assert vm.snapshot().has_demo_source is False
+    finally:
+        vm.shutdown()

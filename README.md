@@ -171,9 +171,15 @@ toolkit either way).
 ## Desktop GUI apps
 
 ```bash
-dmxreplay-player-gui      # DMXReplay Player
-dmxreplay-recorder-gui    # DMXReplay Recorder
+dmxreplay-gui              # Welcome screen -> choose Player or Recorder
+dmxreplay-player-gui       # DMXReplay Player directly
+dmxreplay-recorder-gui     # DMXReplay Recorder directly
 ```
+
+**No lighting rig? No `.dmxr` file?** Open the Player, then **File → Open Demo
+Show** — loads a small bundled synthetic show and plays it to loopback with one
+click. The Recorder has an equivalent **Demo (no hardware needed)** input option.
+See [docs/DEMO_MODE.md](docs/DEMO_MODE.md).
 
 See [docs/API.md](docs/API.md) §8 for what they cover and
 [docs/BUILD_AND_DISTRIBUTION.md](docs/BUILD_AND_DISTRIBUTION.md) for packaging them

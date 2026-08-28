@@ -181,3 +181,39 @@ def test_loop_and_speed_are_forwarded_to_player(tmp_path):
         assert snap.speed == 2.0
     finally:
         vm.shutdown()
+
+
+def test_open_demo_show_loads_the_bundled_demo_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    vm = PlayerViewModel()
+    try:
+        vm.open_demo_show()
+        snap = vm.snapshot()
+        assert snap.loaded is True
+        assert snap.error_text is None
+        assert snap.universe_count > 0
+    finally:
+        vm.shutdown()
+
+
+def test_current_preview_reflects_the_loaded_file_after_set_preview_mode(tmp_path):
+    path = str(tmp_path / "s.dmxr")
+    _make_dmxr(path, frame_count=5)
+    vm = PlayerViewModel()
+    try:
+        vm.open_file(path)
+        vm.set_preview_mode("rgb_led")
+        preview = vm.current_preview(0)
+        assert preview is not None
+        assert len(preview) == 171  # LED_PIXELS_PER_UNIVERSE
+        assert preview[0] == (0, 0, 0)  # frame 0's channels[0]=0, rest 0 (_make_dmxr)
+    finally:
+        vm.shutdown()
+
+
+def test_current_preview_before_loading_anything_returns_none():
+    vm = PlayerViewModel()
+    try:
+        assert vm.current_preview(0) is None
+    finally:
+        vm.shutdown()

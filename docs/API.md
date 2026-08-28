@@ -379,6 +379,7 @@ config file nobody is watching interactively.
 class PlayerViewModel:
     def __init__(self, loop_thread: AsyncLoopThread | None = None) -> None: ...
     def open_file(self, path: str) -> None: ...
+    def open_demo_show(self) -> None: ...              # loads the bundled demo show, docs/DEMO_MODE.md
     def load_external_video(self, path: str) -> None: ...
     def configure_output(self, protocol, interface_ip, destination_ip, port, priority=100) -> None: ...
     def play(self) -> None: ...
@@ -388,13 +389,18 @@ class PlayerViewModel:
     def skip(self, direction: int) -> None: ...       # rewind(-1)/fast-forward(+1) by SKIP_SECONDS
     def set_loop(self, enabled: bool) -> None: ...
     def set_speed(self, speed: float) -> None: ...
+    def set_preview_mode(self, mode: PreviewMode) -> None: ...
+    def current_preview(self, row: int): ...            # for the universe monitor widget
     def snapshot(self) -> PlayerSnapshot: ...          # everything a view needs to redraw itself
     def shutdown(self) -> None: ...
 
 class RecorderViewModel:
     def __init__(self, loop_thread: AsyncLoopThread | None = None) -> None: ...
     def add_source(self, protocol: str, interface_ip: str, port: int | None = None) -> None: ...
+    def add_demo_source(self, universe_count: int = 4, fps: float = 30.0) -> None: ...  # docs/DEMO_MODE.md
+    def remove_demo_source(self) -> None: ...
     def refresh_universes(self) -> list[RowInfo]: ...
+    def current_preview(self, row: int, mode: str = "raw"): ...
     def start(self, output_path: str) -> None: ...
     def stop(self) -> None: ...
     def snapshot(self) -> RecorderSnapshot: ...
@@ -405,6 +411,13 @@ class PlayerWindow:   # Tkinter -- src/dmxreplay/ui/player_app.py
 
 class RecorderWindow: # Tkinter -- src/dmxreplay/ui/recorder_app.py
     def __init__(self, root, viewmodel: RecorderViewModel | None = None) -> None: ...
+
+class UniverseMonitor(tk.Frame):  # src/dmxreplay/ui/universe_monitor.py -- shared by both windows above
+    def __init__(self, parent, pixel_count: int, *, title: str = "Universe monitor") -> None: ...
+    def update_pixels(self, pixels) -> None: ...  # tuple[tuple[int,int,int], ...] from rgb_led_pixels(), or None
+
+class LauncherWindow:  # src/dmxreplay/ui/launcher.py -- what `dmxreplay-gui` opens
+    def __init__(self, root: tk.Tk) -> None: ...
 ```
 
 `dmxreplay.ui` is split into two layers, enforcing CONTRIBUTING.md's GUI-independence
@@ -440,9 +453,25 @@ filename, recording duration/packet/status display (Recorder). Visual styling wa
 explicitly deprioritized in favor of correctness, per the same instruction that shaped
 this whole module's structure.
 
-Entry points: `dmxreplay-player-gui` / `dmxreplay-recorder-gui`
-(`[project.gui-scripts]` in `pyproject.toml` — not `[project.scripts]`, so a packaged
-Windows build doesn't open a console window alongside the GUI).
+Entry points: `dmxreplay-gui` (a "Welcome to DMXReplay" chooser, `launcher.py` --
+what a packaged app's launch icon runs), `dmxreplay-player-gui` /
+`dmxreplay-recorder-gui` (either window directly). All three are
+`[project.gui-scripts]` in `pyproject.toml`, not `[project.scripts]`, so a packaged
+Windows build doesn't open a console window alongside the GUI.
+
+**Demo mode** (`docs/DEMO_MODE.md`): Player's File menu has "Open Demo Show" (a
+small bundled synthetic `.dmxr`, `dmxreplay.demo.demo_show_path()`, cached after
+first generation) and its Output panel's Destination field defaults to loopback
+(`127.0.0.1`); Recorder's Input panel has a third "Demo (no hardware needed)" option
+alongside Art-Net/sACN, backed by `Recorder.add_demo_source()` (a real ticking
+`asyncio` task feeding `DMXEngine.update_artnet()` directly, exercising the identical
+engine/writer code path a real listener would). Both windows also gained a live
+"universe monitor" panel (`UniverseMonitor`, RGB-LED preview via
+`dmxreplay.preview.rgb_led_pixels()` -- Phase 9's preview module, implemented earlier
+but not wired into either GUI until this pass). None of this is a separate code path
+from real playback/recording -- it exists specifically so the interface can be
+explored and understood with zero external setup, not as a simulation of real
+hardware behavior.
 
 ## 9. `dmxreplay.service` — long-running commandable Player/Recorder services (implemented, cross-platform extension Phase C)
 

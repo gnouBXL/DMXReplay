@@ -83,6 +83,15 @@ class PlayerViewModel:
         self._status_text = f"Loaded {path}"
         self._notify()
 
+    def open_demo_show(self) -> None:
+        """Loads the bundled demo show (`dmxreplay.demo.demo_show_path()`),
+        generating it once and caching it, so "try DMXReplay" never
+        requires the user to already have a `.dmxr` file or a lighting rig
+        to make one with (docs/DEMO_MODE.md)."""
+        from ..demo import demo_show_path
+
+        self.open_file(demo_show_path())
+
     def load_external_video(self, path: str) -> None:
         try:
             self._player.load_external_video(path)
@@ -172,6 +181,17 @@ class PlayerViewModel:
         self._speed = speed
         self._loop_thread.call_soon(lambda: self._player.set_speed(speed))
         self._notify()
+
+    # --- Preview (universe monitor) -----------------------------------------
+
+    def set_preview_mode(self, mode) -> None:  # mode: dmxreplay.preview.PreviewMode
+        self._player.set_preview_mode(mode)
+
+    def current_preview(self, row: int):
+        """The current DMX state at `row`, for a live "universe monitor"
+        widget -- purely cosmetic, mirrors `Player.current_preview()`
+        exactly (see that method's docstring); never affects playback."""
+        return self._player.current_preview(row)
 
     def _marshal(self, fn: Callable[[], None]) -> None:
         # Overridden by the Tk view to marshal onto the Tk thread via

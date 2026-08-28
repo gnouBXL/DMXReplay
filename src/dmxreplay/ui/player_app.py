@@ -15,7 +15,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import filedialog, ttk
 
+from ..preview import LED_PIXELS_PER_UNIVERSE
 from .player_viewmodel import PlayerSnapshot, PlayerViewModel
+from .universe_monitor import UniverseMonitor
 
 POLL_INTERVAL_MS = 150
 
@@ -33,6 +35,11 @@ class PlayerWindow:
         self.vm = viewmodel or PlayerViewModel()
         self._scrubbing = False
         root.title("DMXReplay Player")
+        # The universe monitor renders RGB-LED preview pixels (rgb_hex);
+        # "raw" mode's grid of raw channel ints is a different shape this
+        # widget doesn't understand -- rgb_led is this window's fixed
+        # choice, not (yet) user-configurable here.
+        self.vm.set_preview_mode("rgb_led")
         self._build_widgets()
         self.vm.set_on_change(self._refresh)  # marshaled onto the Tk thread by the vm's own _marshal override
         self.vm._marshal = lambda fn: self.root.after(0, fn)  # noqa: SLF001 -- intentional, see player_viewmodel.py's note
@@ -46,6 +53,7 @@ class PlayerWindow:
         menubar = tk.Menu(root)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Open .dmxr...", command=self._on_open)
+        file_menu.add_command(label="Open Demo Show", command=self._on_open_demo)
         file_menu.add_command(label="Load external video...", command=self._on_open_video)
         file_menu.add_separator()
         file_menu.add_command(label="Quit", command=self._on_close)
@@ -88,6 +96,10 @@ class PlayerWindow:
         self.interface_entry.grid(row=1, column=1, sticky="w")
         ttk.Label(output_frame, text="Destination:").grid(row=1, column=2, sticky="e")
         self.destination_entry = ttk.Entry(output_frame, width=16)
+        # Loopback by default -- no lighting rig needed to press Play and
+        # see the transport actually work; a real destination IP replaces
+        # this when the user has one to type.
+        self.destination_entry.insert(0, "127.0.0.1")
         self.destination_entry.grid(row=1, column=3, sticky="w")
         ttk.Button(output_frame, text="Apply", command=self._on_apply_output).grid(row=1, column=4, padx=8)
 
@@ -107,12 +119,24 @@ class PlayerWindow:
         self.error_label = ttk.Label(status_frame, text="", foreground="red")
         self.error_label.pack(anchor="w")
 
+        # --- Universe monitor (Phase 9 preview, wired into the GUI here) ---
+        self.universe_monitor = UniverseMonitor(
+            root, LED_PIXELS_PER_UNIVERSE, title="Universe monitor (row 0, RGB preview)"
+        )
+        self.universe_monitor.pack(padx=8, pady=(4, 8))
+
     # --- Actions -----------------------------------------------------------
 
     def _on_open(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("DMXReplay show", "*.dmxr"), ("All files", "*.*")])
         if path:
             self.vm.open_file(path)
+
+    def _on_open_demo(self) -> None:
+        """Loads the bundled demo show (generated on first use, cached
+        after) -- so "File > Open Demo Show" always works with zero setup,
+        no lighting rig and no user-supplied file needed."""
+        self.vm.open_demo_show()
 
     def _on_open_video(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("Video", "*.mp4 *.mov *.mkv"), ("All files", "*.*")])
@@ -172,6 +196,8 @@ class PlayerWindow:
             text=f"Synchronization: {'playing' if snap.playing else 'stopped'} (master timeline on this device)"
         )
         self.error_label.config(text=snap.error_text or "")
+        pixels = self.vm.current_preview(0) if snap.loaded else None
+        self.universe_monitor.update_pixels(pixels)
 
 
 def main() -> None:

@@ -6,6 +6,47 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Phase J (in progress): GUI demo mode, universe monitor, and a "Welcome" launcher
+- `dmxreplay.dmx.DemoDMXSource`: a deterministic, no-network-needed synthetic DMX
+  chase pattern, so the Recorder and Player GUIs can be explored without any real
+  Art-Net/sACN hardware connected.
+- `Recorder.add_demo_source()`/`remove_demo_source()`/`current_preview()`: feeds the
+  demo pattern through the exact same `DMXEngine.update_artnet()` -> recording code
+  path a real listener would use. Wired into the Recorder GUI as a third "Demo (no
+  hardware needed)" input option alongside Art-Net/sACN.
+- `dmxreplay.demo.demo_show_path()`: a small bundled demo `.dmxr` show (with audio),
+  generated once and cached under the platform's per-user cache directory. Wired into
+  the Player GUI as "File -> Open Demo Show"; the Output panel's Destination field
+  now defaults to loopback (`127.0.0.1`) so Play works immediately with zero network
+  setup.
+- New `UniverseMonitor` Tk widget (shared by both windows): a live grid of colored
+  squares via `dmxreplay.preview.rgb_led_pixels()` -- Phase 9's preview module,
+  implemented earlier but never actually wired into either GUI until now.
+- New `dmxreplay-gui` entry point / `LauncherWindow`: a "Welcome to DMXReplay"
+  chooser (Player / Recorder / Configure), the entry point a packaged app's launch
+  icon will run, rather than requiring the user already know
+  `dmxreplay-player-gui`/`dmxreplay-recorder-gui` exist as separate commands.
+- **A real bug found and fixed while wiring the Recorder's demo option**:
+  `RecorderViewModel.add_demo_source()` initially called `Recorder.add_demo_source()`
+  directly on the GUI thread, but that method starts an `asyncio` task internally and
+  needs the background loop thread as its running-loop context -- exactly the class
+  of bug `async_bridge.AsyncLoopThread`'s own docstring warns against. Fixed to
+  dispatch via `call_soon`, matching every other sync Recorder/Player call the GUI
+  makes; regression test added.
+- This session also stood up a genuinely working `Xvfb` + Tkinter-enabled-Python GUI
+  test environment for the first time (`python3.12` has a working Tkinter in this
+  environment; earlier interpreters here don't) -- 5 new real Tkinter widget tests
+  added to `tests_gui/` (now 9 total, all passing under `xvfb-run`), and the actual
+  running app (launcher + Player playing the demo show + Recorder with its demo
+  source active) was screenshotted for real via `ffmpeg x11grab`, not just described.
+- 18 new headless tests total (`tests/test_demo_source.py`, `tests/test_demo_show.py`,
+  `tests/test_recorder_demo_source.py`, plus additions to the existing viewmodel test
+  files) -- full suite now 310 passed, 1 skipped.
+- New `docs/DEMO_MODE.md`; `docs/API.md` §8, `README.md` updated.
+- **Not yet done**: a real macOS `.dmg` build step, a Windows installer, and
+  hand-authored Android project scaffolding (so `flutter create` isn't a step the
+  user has to run) -- see `docs/ARCHITECTURE.md` Phase J for what's still open.
+
 ### Changed — Cross-platform extension Phase I: Final packaging + documentation pass
 - Every doc this phase covers (`ARCHITECTURE.md`, `API.md`, `RASPBERRY_PI.md`,
   `RASPBERRY_PI_INSTALL.md`, `MOBILE.md`, `MOBILE_API.md`, `NETWORKING.md`,
