@@ -121,7 +121,7 @@ same core engine and `.dmxr` format, unchanged. See
 |---|---|---|
 | A | Desktop GUIs (`dmxreplay.ui`, Tkinter) + Windows/macOS packaging | ✅ GUI + Linux-verified packaging; Windows/macOS build scripts written, unverified on real hardware |
 | B | Raspberry Pi ARM64/headless foundation | ✅ config loader + systemd unit verified; real Pi hardware unverified |
-| C | Long-running commandable Player/Recorder service | planned |
+| C | Long-running commandable Player/Recorder service | ✅ |
 | D | Control API (HTTP + WebSocket) | planned |
 | E | Raspberry Pi configuration + discovery | planned |
 | F | Mobile remote controller | planned |

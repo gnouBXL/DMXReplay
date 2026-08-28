@@ -6,6 +6,30 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase C: Long-running commandable Player/Recorder service
+- `src/dmxreplay/service`: `PlayerService`/`RecorderService` -- plain `asyncio`-native
+  wrappers (no network, no GUI toolkit) around `Player`/`Recorder` that stay alive and
+  keep accepting new commands after `play()`/`start()` begins, unlike
+  `dmxreplay-play`/`dmxreplay-record`'s CLI, which runs once to completion. This is the
+  foundation Phase D's HTTP/WebSocket Control API will be a thin layer over -- the
+  real-time tick loop stays inside `Player._run_loop()`, never duplicated here.
+- `ShowLibrary`: lists and resolves `.dmxr` files within one directory, with real
+  path-traversal defense (`os.path.realpath` containment check, including a
+  symlink-escape case in `tests/test_show_library.py`) -- the boundary a future
+  client-supplied show name from the network API will have to cross safely.
+  `PlayerService.next_show()`/`previous_show()` are built on it, and rely on (and are
+  tested against) `Player.load()`'s already-verified behavior of never touching output
+  configuration, so switching shows mid-session never needs to reopen the network
+  sender.
+- `PlayerService`/`RecorderService` cover the command surface the extension brief's §4
+  lists: status, show library browse/load/next/previous, play/pause/stop/seek/
+  frame-step, loop/speed/fps get+set, output config get+set, record start/stop.
+- 20 new tests, all real (Art-Net traffic through real UDP sockets, real `.dmxr` files
+  read back and verified) -- no mocking of DMX/network logic, matching this project's
+  standing test discipline.
+- `docs/API.md` §9 documents the new module; `docs/ARCHITECTURE.md`/`README.md`
+  updated.
+
 ### Added — Cross-platform extension Phase B: Raspberry Pi ARM64/headless foundation
 - `src/dmxreplay/config`: `PlayerConfig`, a real TOML loader implementing exactly the
   config shape `docs/RASPBERRY_PI.md` §14 proposed (but never parsed) since Phase 4 --

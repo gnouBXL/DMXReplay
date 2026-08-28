@@ -10,8 +10,10 @@ directly (brief §52).
 
 Status: everything documented here is implemented (Phases 1–9) and has an explicit
 conformance test suite (Phase 10, [`tests/test_conformance.py`](../tests/test_conformance.py),
-`docs/SPECIFICATION.md` §19–§20). `dmxreplay.ui` (§8 below) — the desktop Player/Recorder
-GUIs — was added in the post-V1 cross-platform extension's Phase A
+`docs/SPECIFICATION.md` §19–§20). `dmxreplay.ui` (§8) — the desktop Player/Recorder
+GUIs — and `dmxreplay.service` (§9) — long-running commandable services, the
+foundation the network Control API will sit on — were added in the post-V1
+cross-platform extension's Phases A and C respectively
 ([docs/ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
@@ -440,3 +442,72 @@ this whole module's structure.
 Entry points: `dmxreplay-player-gui` / `dmxreplay-recorder-gui`
 (`[project.gui-scripts]` in `pyproject.toml` — not `[project.scripts]`, so a packaged
 Windows build doesn't open a console window alongside the GUI).
+
+## 9. `dmxreplay.service` — long-running commandable Player/Recorder services (implemented, cross-platform extension Phase C)
+
+```python
+class ShowLibrary:
+    def __init__(self, directory: str) -> None: ...
+    def list_shows(self) -> list[str]: ...                          # sorted .dmxr filenames
+    def resolve(self, name: str, *, must_exist: bool = True) -> str: ...  # -> absolute path, rejects anything outside the directory
+
+class PlayerService:
+    def __init__(self, shows_directory: str | None = None, clock_provider: ClockProvider | None = None) -> None: ...
+    def get_shows(self) -> list[str]: ...
+    def load_show(self, name_or_path: str) -> None: ...
+    def load_external_video(self, name_or_path: str) -> None: ...
+    async def next_show(self) -> None: ...        # ShowNotFoundError if no library/no shows
+    async def previous_show(self) -> None: ...
+    def set_output(self, protocol, interface_ip="0.0.0.0", destination_ip=None, port=None, priority=100) -> None: ...
+    def set_universe_mapping(self, mapping: dict[int, int] | None) -> None: ...
+    async def play(self) -> None: ...
+    def pause(self) -> None: ...
+    async def stop(self) -> None: ...
+    def seek_seconds(self, seconds: float) -> None: ...
+    async def frame_step(self, direction: int = 1) -> None: ...
+    def set_loop(self, enabled: bool) -> None: ...
+    def set_speed(self, speed: float) -> None: ...
+    def set_fps(self, fps: float) -> None: ...
+    def get_status(self) -> PlayerStatus: ...
+    def get_config(self) -> dict: ...              # {"loop", "speed", "fps"}
+    def set_config(self, *, loop=None, speed=None, fps=None) -> None: ...
+    def get_network_status(self) -> dict: ...       # {"output_protocol", "interface_ip", "destination_ip", "port", "priority"}
+    async def shutdown(self) -> None: ...
+
+class RecorderService:
+    def __init__(self, shows_directory: str | None = None) -> None: ...
+    async def add_source(self, protocol: str, interface_ip: str, port: int | None = None) -> None: ...
+    def get_universes(self) -> list[RowInfo]: ...
+    def record_start(self, filename: str) -> None: ...   # resolved into shows_directory if configured
+    def record_stop(self) -> None: ...
+    def get_status(self) -> RecorderStatus: ...
+    output_filename: str | None                            # property
+    async def shutdown(self) -> None: ...
+```
+
+These are plain `asyncio`-native Python objects — no network, no GUI toolkit. The
+extension brief's own instruction ("the API must not contain the real-time DMX
+playback loop") is honored one layer earlier than the future network API layer:
+`PlayerService`/`RecorderService` don't talk to a network at all, they just sequence
+calls to `Player`/`Recorder` (§4/§5) exactly like `dmxreplay-play`/`dmxreplay-record`'s
+CLI wrappers do — the difference is these stay alive and keep accepting new commands
+after `play()`/`start()` begins, which the CLI wrappers don't (they run once to
+completion). Phase D's HTTP/WebSocket Control API will be a thin layer calling these
+same methods; the real-time tick loop stays inside `Player._run_loop()`, never
+duplicated or reimplemented at this layer or the next one.
+
+`ShowLibrary` is deliberately minimal (list + resolve within one directory — upload/
+delete/rich metadata is Phase G, layered on top, not duplicated here), but its path
+resolution is a real security boundary worth getting right *now*: `resolve()` rejects
+any name that resolves (after following symlinks, via `os.path.realpath`) outside the
+library directory — a client-supplied show name reaching this from a future network API
+must never be able to read or overwrite an arbitrary file on the host. Verified by
+`tests/test_show_library.py`, including a symlink-escape case, not just the obvious
+`../../etc/passwd` one.
+
+`PlayerService.next_show()`/`previous_show()` rely on (and are tested against) a real,
+already-verified `Player` behavior: `load()` never touches output configuration
+(`set_output()`), so switching shows mid-session never needs to reopen the network
+sender. Both clamp at the ends of the show list (no wrap-around), matching
+`Player.seek()`/`frame_step()`'s existing clamping convention (`docs/API.md` §5)
+rather than introducing a different one here.
