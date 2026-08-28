@@ -159,6 +159,55 @@ class DeviceConfig {
   final int priority;
 }
 
+/// Mirrors `GET_SHOW_INFO`'s result (docs/MOBILE_API.md §6) -- per-show
+/// metadata for any show in the library, not just the loaded one.
+class ShowInfo {
+  const ShowInfo({
+    required this.name,
+    required this.durationSeconds,
+    required this.fps,
+    required this.vfr,
+    required this.encoding,
+    required this.universeCount,
+    required this.hasAudio,
+    required this.hasExternalVideo,
+    required this.createdAt,
+    required this.showName,
+    required this.description,
+    required this.fileSizeBytes,
+  });
+
+  factory ShowInfo.fromJson(Map<String, dynamic> json) {
+    return ShowInfo(
+      name: json['name'] as String? ?? '',
+      durationSeconds: (json['duration_seconds'] as num?)?.toDouble() ?? 0.0,
+      fps: (json['fps'] as num?)?.toDouble(),
+      vfr: json['vfr'] as bool? ?? false,
+      encoding: json['encoding'] as String? ?? '',
+      universeCount: json['universe_count'] as int? ?? 0,
+      hasAudio: json['has_audio'] as bool? ?? false,
+      hasExternalVideo: json['has_external_video'] as bool? ?? false,
+      createdAt: json['created_at'] as String?,
+      showName: json['show_name'] as String?,
+      description: json['description'] as String?,
+      fileSizeBytes: json['file_size_bytes'] as int?,
+    );
+  }
+
+  final String name;
+  final double durationSeconds;
+  final double? fps;
+  final bool vfr;
+  final String encoding;
+  final int universeCount;
+  final bool hasAudio;
+  final bool hasExternalVideo;
+  final String? createdAt;
+  final String? showName;
+  final String? description;
+  final int? fileSizeBytes;
+}
+
 /// A DMXReplay device the app knows about -- either found via mDNS
 /// (docs/NETWORKING.md §3) or entered manually by IP (the app must never
 /// require discovery, docs/MOBILE_API.md §1).

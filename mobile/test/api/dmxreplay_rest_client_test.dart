@@ -133,6 +133,78 @@ void main() {
     });
   });
 
+  group('DmxReplayRestClient show management (Phase G)', () {
+    test('getShowInfo() sends GET_SHOW_INFO with the show name', () async {
+      http.Request? captured;
+      final client = _clientWith((request) async {
+        captured = request;
+        return _ok({
+          'ok': true,
+          'command': 'GET_SHOW_INFO',
+          'result': {'name': 'A.dmxr', 'duration_seconds': 12.0, 'universe_count': 1},
+        });
+      });
+
+      final info = await client.getShowInfo('A.dmxr');
+
+      final sentBody = jsonDecode(captured!.body) as Map<String, dynamic>;
+      expect(sentBody['command'], 'GET_SHOW_INFO');
+      expect(sentBody['params'], {'name': 'A.dmxr'});
+      expect(info.name, 'A.dmxr');
+      expect(info.universeCount, 1);
+    });
+
+    test('deleteShow() sends DELETE_SHOW and decodes its array result', () async {
+      final client = _clientWith((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['command'], 'DELETE_SHOW');
+        expect(body['params'], {'name': 'A.dmxr'});
+        return _ok({'ok': true, 'command': 'DELETE_SHOW', 'result': ['B.dmxr']});
+      });
+
+      final remaining = await client.deleteShow('A.dmxr');
+
+      expect(remaining, ['B.dmxr']);
+    });
+
+    test('deleteShow() on the currently-playing show surfaces the 409 as CommandFailedException', () async {
+      final client = _clientWith((request) async {
+        return http.Response(
+          jsonEncode({'ok': false, 'error': "cannot delete 'A.dmxr' while it is playing -- stop it first"}),
+          409,
+        );
+      });
+
+      await expectLater(client.deleteShow('A.dmxr'), throwsA(isA<CommandFailedException>()));
+    });
+
+    test('uploadShowBytes() PUTs the raw bytes to /api/v1/shows/{name}', () async {
+      http.Request? captured;
+      final client = _clientWith((request) async {
+        captured = request;
+        return _ok({'ok': true, 'result': {'name': 'Uploaded.dmxr', 'size_bytes': 4}});
+      });
+
+      final result = await client.uploadShowBytes('Uploaded.dmxr', [1, 2, 3, 4]);
+
+      expect(captured!.method, 'PUT');
+      expect(captured!.url.path, '/api/v1/shows/Uploaded.dmxr');
+      expect(captured!.headers['Authorization'], 'Bearer test-token');
+      expect(captured!.headers['Content-Type'], 'application/octet-stream');
+      expect(captured!.bodyBytes, [1, 2, 3, 4]);
+      expect(result['name'], 'Uploaded.dmxr');
+      expect(result['size_bytes'], 4);
+    });
+
+    test('uploadShowBytes() on an invalid file surfaces the 409', () async {
+      final client = _clientWith((request) async {
+        return http.Response(jsonEncode({'ok': false, 'error': "not a valid DMXReplay (.dmxr) file"}), 409);
+      });
+
+      await expectLater(client.uploadShowBytes('bad.dmxr', [0]), throwsA(isA<CommandFailedException>()));
+    });
+  });
+
   group('DmxReplayRestClient recorder commands', () {
     test('getRecorderStatus() sends GET_RECORDER_STATUS and never restarts recording', () async {
       final sentCommands = <String>[];

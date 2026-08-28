@@ -81,6 +81,22 @@ async def _load_show(router: CommandRouter, params: dict) -> Any:
     return _to_jsonable(player.get_status())
 
 
+async def _get_show_info(router: CommandRouter, params: dict) -> Any:
+    name = params.get("name")
+    if not name:
+        raise CommandError("GET_SHOW_INFO requires 'name'")
+    return router.require_player().get_show_info(name)
+
+
+async def _delete_show(router: CommandRouter, params: dict) -> Any:
+    name = params.get("name")
+    if not name:
+        raise CommandError("DELETE_SHOW requires 'name'")
+    player = router.require_player()
+    player.delete_show(name)
+    return player.get_shows()
+
+
 async def _play(router: CommandRouter, params: dict) -> Any:
     player = router.require_player()
     await player.play()
@@ -187,6 +203,8 @@ async def _get_network_status(router: CommandRouter, params: dict) -> Any:
 _HANDLERS: dict[str, CommandHandler] = {
     "GET_STATUS": _get_status,
     "GET_SHOWS": _get_shows,
+    "GET_SHOW_INFO": _get_show_info,
+    "DELETE_SHOW": _delete_show,
     "LOAD_SHOW": _load_show,
     "PLAY": _play,
     "PAUSE": _pause,

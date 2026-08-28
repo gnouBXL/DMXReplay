@@ -175,3 +175,115 @@ def test_frame_step_through_the_service(tmp_path):
 
     received = asyncio.run(body())
     assert received == [1]  # frame 1's channel-1 value
+
+
+def test_get_show_info_reports_real_manifest_fields(tmp_path):
+    _write_show(str(tmp_path / "A.dmxr"), channel1_base=0, frame_count=10)
+    service = PlayerService(shows_directory=str(tmp_path))
+
+    info = service.get_show_info("A.dmxr")
+
+    assert info["name"] == "A.dmxr"
+    assert info["encoding"] == "grayscale"
+    assert info["fps"] == 50.0
+    assert info["universe_count"] == 1
+    assert info["has_audio"] is False
+    assert info["has_external_video"] is False
+    assert info["file_size_bytes"] == (tmp_path / "A.dmxr").stat().st_size
+    assert info["duration_seconds"] == pytest.approx(10 * FRAME_PERIOD_NS / 1e9)
+
+
+def test_get_show_info_by_direct_path_without_a_library(tmp_path):
+    path = str(tmp_path / "s.dmxr")
+    _write_show(path, channel1_base=0)
+    service = PlayerService()  # no shows_directory
+    info = service.get_show_info(path)
+    assert info["name"] == "s.dmxr"
+
+
+def test_get_show_info_missing_show_raises(tmp_path):
+    service = PlayerService(shows_directory=str(tmp_path))
+    with pytest.raises(ShowNotFoundError):
+        service.get_show_info("nope.dmxr")
+
+
+def test_delete_show_removes_it_from_the_library(tmp_path):
+    _write_show(str(tmp_path / "A.dmxr"), channel1_base=0)
+    service = PlayerService(shows_directory=str(tmp_path))
+
+    service.delete_show("A.dmxr")
+
+    assert service.get_shows() == []
+    assert not (tmp_path / "A.dmxr").exists()
+
+
+def test_delete_show_without_a_library_raises(tmp_path):
+    service = PlayerService()  # no shows_directory
+    with pytest.raises(ShowNotFoundError):
+        service.delete_show("A.dmxr")
+
+
+def test_delete_show_currently_playing_raises_and_does_not_delete(tmp_path):
+    _write_show(str(tmp_path / "A.dmxr"), channel1_base=0, frame_count=20)
+
+    async def body():
+        listener, received, port = await _start_rig()
+        service = PlayerService(shows_directory=str(tmp_path))
+        service.load_show("A.dmxr")
+        service.set_output("Art-Net", interface_ip="127.0.0.1", destination_ip="127.0.0.1", port=port)
+        await service.play()
+        await asyncio.sleep(0.05)
+
+        with pytest.raises(ValueError, match="playing"):
+            service.delete_show("A.dmxr")
+
+        await service.stop()
+        listener.stop()
+
+    asyncio.run(body())
+    assert (tmp_path / "A.dmxr").exists()
+
+
+def test_delete_show_currently_loaded_but_stopped_succeeds_and_forgets_the_name(tmp_path):
+    _write_show(str(tmp_path / "A.dmxr"), channel1_base=0)
+    service = PlayerService(shows_directory=str(tmp_path))
+    service.load_show("A.dmxr")
+
+    service.delete_show("A.dmxr")
+
+    assert service.get_status().show_name is None
+    assert not (tmp_path / "A.dmxr").exists()
+
+
+def test_upload_show_accepts_a_real_dmxr_file(tmp_path):
+    source = tmp_path / "source.dmxr"
+    _write_show(str(source), channel1_base=0)
+    uploads_dir = tmp_path / "uploads"
+    service = PlayerService(shows_directory=str(uploads_dir))
+
+    result = service.upload_show("Uploaded.dmxr", source.read_bytes())
+
+    assert result["name"] == "Uploaded.dmxr"
+    assert result["size_bytes"] == source.stat().st_size
+    assert service.get_shows() == ["Uploaded.dmxr"]
+    # And it's actually loadable, not just present on disk:
+    service.load_show("Uploaded.dmxr")
+    assert service.get_status().loaded is True
+
+
+def test_upload_show_rejects_garbage_and_leaves_no_file_behind(tmp_path):
+    uploads_dir = tmp_path / "uploads"
+    service = PlayerService(shows_directory=str(uploads_dir))
+
+    with pytest.raises(ValueError, match="not a valid DMXReplay"):
+        service.upload_show("bad.dmxr", b"this is not a real dmxr container")
+
+    assert service.get_shows() == []
+    assert not (uploads_dir / "bad.dmxr").exists()
+    assert not (uploads_dir / "bad.dmxr.part").exists()
+
+
+def test_upload_show_without_a_library_raises(tmp_path):
+    service = PlayerService()  # no shows_directory
+    with pytest.raises(ShowNotFoundError):
+        service.upload_show("A.dmxr", b"data")

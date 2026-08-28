@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass
 
 from ..clock import ClockProvider
+from ..container import DMXReplayReader
 from ..player import Player
 from .show_library import ShowLibrary, ShowNotFoundError
 
@@ -65,6 +66,73 @@ class PlayerService:
 
     def get_shows(self) -> list[str]:
         return self._library.list_shows() if self._library is not None else []
+
+    def get_show_info(self, name_or_path: str) -> dict:
+        """Per-show metadata (Phase G's "info via the Control API") --
+        opens the file itself rather than reading `list_shows()`-adjacent
+        bookkeeping, so it's always accurate for a show that isn't
+        currently loaded too. Uses the same eager `DMXReplayReader` the
+        `dmxreplay-info` CLI already does (docs/API.md §7) -- not the
+        heaviest possible approach for a large audio-bearing show, but the
+        established, tested way this project reads a manifest, not a new
+        one invented just for this command."""
+        path = self._library.resolve(name_or_path) if self._library is not None else name_or_path
+        with DMXReplayReader(path) as reader:
+            manifest = reader.manifest
+        return {
+            "name": os.path.basename(path),
+            "duration_seconds": manifest.duration_seconds,
+            "fps": manifest.fps,
+            "vfr": manifest.vfr,
+            "encoding": manifest.encoding,
+            "universe_count": manifest.height,
+            "has_audio": manifest.audio is not None,
+            "has_external_video": manifest.external_video_ref is not None,
+            "created_at": manifest.created_at,
+            "show_name": manifest.show_name,
+            "description": manifest.description,
+            "file_size_bytes": os.path.getsize(path),
+        }
+
+    def delete_show(self, name: str) -> None:
+        """Phase G's "delete via the Control API". Refuses to delete the
+        show currently playing -- the file is gone but `Player` already
+        holds every frame in memory (it loads eagerly, docs/API.md §5), so
+        deletion itself wouldn't glitch playback, but leaving the library
+        and the running show inconsistent (file gone, still "loaded" and
+        playing) is confusing for no benefit; STOP first is one extra
+        command, not a real burden."""
+        if self._library is None:
+            raise ShowNotFoundError("no show library configured on this server")
+        if name == self._show_name and self._player.playing:
+            raise ValueError(f"cannot delete {name!r} while it is playing -- stop it first")
+        self._library.delete(name)
+        if name == self._show_name:
+            self._show_name = None
+
+    def upload_show(self, name: str, data: bytes) -> dict:
+        """Phase G's "upload from client to Pi". Writes `data`, then
+        immediately opens it back up as a real `DMXReplayReader` -- not to
+        decode every frame, just to confirm it parses as a valid
+        DMXReplay container with a manifest attachment (`__exit__` runs
+        immediately, `with` block body is empty) -- and deletes the file
+        again on any failure, so an interrupted/corrupt/wrong-format upload
+        never sits in the library looking like a real, loadable show.
+        Deliberately catches every exception the open/parse might raise
+        (av's own decode errors included, not just this project's own
+        `NotADMXReplayFileError`) -- this is a boundary validating
+        arbitrary bytes a network client sent, not a place to assume the
+        specific failure mode in advance."""
+        if self._library is None:
+            raise ShowNotFoundError("no show library configured on this server")
+        path = self._library.save(name, data)
+        try:
+            with DMXReplayReader(path):
+                pass
+        except Exception as exc:
+            os.remove(path)
+            raise ValueError(f"uploaded file {name!r} is not a valid DMXReplay (.dmxr) file: {exc}") from exc
+        return {"name": os.path.basename(path), "size_bytes": len(data)}
 
     def load_show(self, name_or_path: str) -> None:
         path = self._library.resolve(name_or_path) if self._library is not None else name_or_path

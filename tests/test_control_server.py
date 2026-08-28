@@ -207,6 +207,107 @@ def test_websocket_auth_then_command_round_trip(tmp_path):
     asyncio.run(body())
 
 
+def test_load_show_on_missing_file_returns_409_not_500():
+    """A real gap found while building Phase G: ShowLibrary's
+    ShowNotFoundError (and other exceptions Player/ShowLibrary raise) is
+    a plain ValueError, not a CommandError -- _dispatch_to_response only
+    caught CommandError, so this returned an unhandled-exception 500
+    instead of the 409 docs/MOBILE_API.md §7 has always documented. Fixed
+    by broadening the caught exception types in server.py."""
+    async def body():
+        token = ApiToken.generate()
+        server = ControlServer(CommandRouter(player_service=PlayerService(shows_directory="/tmp")), token=token)
+        async with TestClient(TestServer(server.app)) as client:
+            resp = await client.post(
+                "/api/v1/command", json={"command": "LOAD_SHOW", "params": {"name": "ghost.dmxr"}},
+                headers={"Authorization": f"Bearer {token.value}"},
+            )
+            assert resp.status == 409
+            payload = await resp.json()
+            assert payload["ok"] is False
+            assert "ghost.dmxr" in payload["error"]
+
+    asyncio.run(body())
+
+
+def test_upload_show_endpoint_accepts_a_real_dmxr_file_and_it_becomes_loadable(tmp_path):
+    show_path = str(tmp_path / "source.dmxr")
+    _write_show(show_path)
+
+    async def body():
+        token = ApiToken.generate()
+        player = PlayerService(shows_directory=str(tmp_path / "uploads"))
+        server = ControlServer(CommandRouter(player_service=player), token=token)
+        headers = {"Authorization": f"Bearer {token.value}"}
+        async with TestClient(TestServer(server.app)) as client:
+            with open(show_path, "rb") as f:
+                data = f.read()
+            resp = await client.put("/api/v1/shows/Uploaded.dmxr", data=data, headers=headers)
+            assert resp.status == 200
+            payload = await resp.json()
+            assert payload["ok"] is True
+            assert payload["result"]["name"] == "Uploaded.dmxr"
+
+            resp = await client.get("/api/v1/shows", headers=headers)
+            assert (await resp.json())["result"] == ["Uploaded.dmxr"]
+
+            resp = await client.post(
+                "/api/v1/command", json={"command": "LOAD_SHOW", "params": {"name": "Uploaded.dmxr"}},
+                headers=headers,
+            )
+            assert resp.status == 200
+            assert (await resp.json())["result"]["loaded"] is True
+
+    asyncio.run(body())
+
+
+def test_upload_show_endpoint_rejects_garbage_with_409():
+    async def body():
+        token = ApiToken.generate()
+        player = PlayerService(shows_directory="/tmp/dmxreplay-upload-test-does-not-need-to-exist")
+        server = ControlServer(CommandRouter(player_service=player), token=token)
+        headers = {"Authorization": f"Bearer {token.value}"}
+        async with TestClient(TestServer(server.app)) as client:
+            resp = await client.put("/api/v1/shows/bad.dmxr", data=b"not a real dmxr file", headers=headers)
+            assert resp.status == 409
+            payload = await resp.json()
+            assert payload["ok"] is False
+
+    asyncio.run(body())
+
+
+def test_upload_show_endpoint_requires_auth():
+    async def body():
+        token = ApiToken.generate()
+        server = ControlServer(CommandRouter(player_service=PlayerService()), token=token)
+        async with TestClient(TestServer(server.app)) as client:
+            resp = await client.put("/api/v1/shows/x.dmxr", data=b"anything")
+            assert resp.status == 401
+
+    asyncio.run(body())
+
+
+def test_delete_show_endpoint_via_command_channel(tmp_path):
+    async def body():
+        token = ApiToken.generate()
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        _write_show(str(library_dir / "A.dmxr"))
+        player = PlayerService(shows_directory=str(library_dir))
+        server = ControlServer(CommandRouter(player_service=player), token=token)
+        headers = {"Authorization": f"Bearer {token.value}"}
+        async with TestClient(TestServer(server.app)) as client:
+            resp = await client.post(
+                "/api/v1/command", json={"command": "DELETE_SHOW", "params": {"name": "A.dmxr"}}, headers=headers,
+            )
+            assert resp.status == 200
+            payload = await resp.json()
+            assert payload["ok"] is True
+            assert payload["result"] == []
+
+    asyncio.run(body())
+
+
 def test_websocket_broadcasts_status_to_connected_clients(tmp_path, monkeypatch):
     """The real-time status push the extension brief specifically asks
     WebSocket for -- not just request/response."""

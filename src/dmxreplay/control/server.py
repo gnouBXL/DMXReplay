@@ -23,6 +23,15 @@ logger = logging.getLogger("dmxreplay.control")
 API_VERSION = "1.0"
 STATUS_BROADCAST_INTERVAL_S = 1.0
 WS_AUTH_TIMEOUT_S = 10.0
+# Generous for a real show file (docs/RASPBERRY_PI.md's benchmarks are all
+# well under this for V1 show lengths) but not unbounded -- the whole
+# upload is buffered in memory (see _handle_upload_show), so this is the
+# cap on how much of the device's RAM one upload can claim. Streaming
+# straight to disk would remove the need for a cap entirely; not done here
+# -- a documented tradeoff, not an oversight (Phase H's hardware
+# validation is where this would get stress-tested against a real Pi's
+# available memory).
+MAX_SHOW_UPLOAD_BYTES = 512 * 1024 * 1024
 
 
 def _error(message: str, status: int) -> web.Response:
@@ -72,6 +81,7 @@ class ControlServer:
         app.router.add_get("/api/v1/status", self._handle_status)
         app.router.add_get("/api/v1/shows", self._handle_shows)
         app.router.add_post("/api/v1/command", self._handle_command)
+        app.router.add_put("/api/v1/shows/{name}", self._handle_upload_show)
         app.router.add_get("/api/v1/ws", self._handle_ws)
         # Local web config UI (extension brief §7/§18) -- docs/MOBILE_API.md
         # doesn't cover these; they serve HTML, not the JSON command
@@ -131,7 +141,15 @@ class ControlServer:
             result = await self.router.dispatch(command, params)
         except UnknownCommandError as exc:
             return _error(str(exc), 404)
-        except CommandError as exc:
+        except (CommandError, ValueError, OSError, RuntimeError) as exc:
+            # CommandError is the router's own "recognized but couldn't be
+            # carried out" signal; the other three are what the underlying
+            # Player/Recorder/ShowLibrary calls actually raise (a missing
+            # show file, an invalid fps, a disk error deleting/saving a
+            # show, ...) -- docs/MOBILE_API.md §7 documents ALL of these as
+            # one 409 row ("A Player/Recorder call itself raises"), so this
+            # catches what that row promises rather than only the router's
+            # own validation errors.
             return _error(str(exc), 409)
         return web.json_response({"ok": True, "command": command, "result": result})
 
@@ -149,6 +167,27 @@ class ControlServer:
         if not isinstance(body, dict) or not isinstance(body.get("command"), str):
             return _error("body must be {'command': str, 'params'?: object}", 400)
         return await self._dispatch_to_response(body["command"], body.get("params") or {})
+
+    async def _handle_upload_show(self, request: web.Request) -> web.Response:
+        """`PUT /api/v1/shows/{name}`, raw `.dmxr` bytes as the body --
+        Phase G's "upload from client to Pi". Deliberately its own HTTP
+        endpoint, not a JSON command: the command protocol (§5's
+        `POST /api/v1/command`) is JSON in and out, not a place to smuggle
+        an arbitrarily large binary payload through, and this way a client
+        gets normal HTTP upload semantics (Content-Length, a PUT-to-a-named-
+        resource shape) instead of base64-in-JSON overhead."""
+        name = request.match_info["name"]
+        if request.content_length is not None and request.content_length > MAX_SHOW_UPLOAD_BYTES:
+            return _error(f"upload exceeds the {MAX_SHOW_UPLOAD_BYTES}-byte limit", 413)
+        data = await request.read()
+        if len(data) > MAX_SHOW_UPLOAD_BYTES:
+            return _error(f"upload exceeds the {MAX_SHOW_UPLOAD_BYTES}-byte limit", 413)
+        try:
+            player = self.router.require_player()
+            result = player.upload_show(name, data)
+        except (CommandError, ValueError, OSError) as exc:
+            return _error(str(exc), 409)
+        return web.json_response({"ok": True, "result": result})
 
     # --- Local web config UI (extension brief §7/§18) ---------------------------
 
@@ -281,7 +320,9 @@ class ControlServer:
         try:
             result = await self.router.dispatch(command, params)
             await ws.send_json({"type": "response", "command": command, "ok": True, "result": result})
-        except (UnknownCommandError, CommandError) as exc:
+        except (UnknownCommandError, CommandError, ValueError, OSError, RuntimeError) as exc:
+            # Same broadened set as _dispatch_to_response's HTTP path --
+            # see that method's comment.
             await ws.send_json({"type": "response", "command": command, "ok": False, "error": str(exc)})
 
     # --- Real-time status broadcast (WebSocket only -- brief's own preference) ---

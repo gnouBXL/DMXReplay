@@ -125,7 +125,7 @@ same core engine and `.dmxr` format, unchanged. See
 | D | Control API (HTTP + WebSocket) | ✅ |
 | E | Raspberry Pi configuration + discovery | ✅ |
 | F | Mobile remote controller | ⚠️ Flutter app code complete ([docs/MOBILE.md](docs/MOBILE.md)); not compiled/run — no Flutter SDK in this environment |
-| G | Show management + file transfer | planned |
+| G | Show management + file transfer | ✅ `GET_SHOW_INFO`/`DELETE_SHOW` commands + `PUT /api/v1/shows/{name}` upload endpoint |
 | H | Performance/hardware validation | planned |
 | I | Final packaging + documentation | planned |
 

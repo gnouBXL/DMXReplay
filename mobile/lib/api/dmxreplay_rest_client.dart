@@ -58,6 +58,42 @@ class DmxReplayRestClient {
     return (json['result'] as List<dynamic>).cast<String>();
   }
 
+  /// `GET_SHOW_INFO` (docs/MOBILE_API.md §5) -- per-show metadata for any
+  /// show in the library, not just the loaded one.
+  Future<ShowInfo> getShowInfo(String name) async {
+    final result = await command('GET_SHOW_INFO', {'name': name});
+    return ShowInfo.fromJson(result);
+  }
+
+  /// `DELETE_SHOW` (docs/MOBILE_API.md §5). Returns the updated show
+  /// listing exactly like `getShows()` would, since that's `DELETE_SHOW`'s
+  /// own `result` -- a JSON array, so this reads [_sendCommandEnvelope]
+  /// directly rather than going through [command] (which assumes an
+  /// object-shaped `result`, same reason [getShows] doesn't use it).
+  Future<List<String>> deleteShow(String name) async {
+    final envelope = await _sendCommandEnvelope('DELETE_SHOW', {'name': name});
+    return (envelope['result'] as List<dynamic>? ?? const <dynamic>[]).cast<String>();
+  }
+
+  /// `PUT /api/v1/shows/{name}` (docs/MOBILE_API.md §5) -- uploads a whole
+  /// `.dmxr` file's raw bytes. Deliberately not `command()`: this is the
+  /// one HTTP-only, non-JSON endpoint in the whole API, since JSON isn't a
+  /// reasonable transport for an arbitrarily large binary payload.
+  Future<Map<String, dynamic>> uploadShowBytes(String name, List<int> bytes) async {
+    final uri = endpoint.httpBase().replace(path: '/api/v1/shows/$name');
+    final response = await _send(
+      () => _http
+          .put(
+            uri,
+            headers: {..._authHeaders, 'Content-Type': 'application/octet-stream'},
+            body: bytes,
+          )
+          .timeout(timeout),
+    );
+    final envelope = _decodeEnvelope('UPLOAD_SHOW', response);
+    return (envelope['result'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+  }
+
   // --- Player transport (docs/MOBILE_API.md §5's command table) -----------
 
   Future<PlayerStatus> loadShow(String name) async =>
@@ -157,8 +193,23 @@ class DmxReplayRestClient {
   /// §5) and returns its `result` object. This is the single place that
   /// actually talks to the device for every mutating call above --
   /// intentionally centralized so "how a command is sent" never diverges
-  /// between transport/pause/seek/etc.
+  /// between transport/pause/seek/etc. Only for commands whose `result` is
+  /// a JSON *object* (every `PlayerStatus`/`RecorderStatus`/`ShowInfo`/
+  /// `DeviceConfig`-shaped one) -- a command whose `result` is a JSON
+  /// array (`DELETE_SHOW`, like `GET_SHOWS`) goes through
+  /// [_sendCommandEnvelope] directly instead, same as [getShows] already
+  /// bypasses this for the same reason.
   Future<Map<String, dynamic>> command(String name, [Map<String, dynamic>? params]) async {
+    final envelope = await _sendCommandEnvelope(name, params);
+    return (envelope['result'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+  }
+
+  /// The full `{"ok": ..., "command": ..., "result": ...}` envelope
+  /// (docs/MOBILE_API.md §6), with error-status mapping already applied --
+  /// [command] narrows this to just the (object-shaped) `result` for the
+  /// common case; callers whose `result` is a JSON array read `envelope`
+  /// directly.
+  Future<Map<String, dynamic>> _sendCommandEnvelope(String name, [Map<String, dynamic>? params]) async {
     final uri = endpoint.httpBase().replace(path: '/api/v1/command');
     final response = await _send(
       () => _http
@@ -169,13 +220,13 @@ class DmxReplayRestClient {
           )
           .timeout(timeout),
     );
-    return _handleCommandResponse(name, response);
+    return _decodeEnvelope(name, response);
   }
 
-  Map<String, dynamic> _handleCommandResponse(String command, http.Response response) {
+  Map<String, dynamic> _decodeEnvelope(String command, http.Response response) {
     final json = _decodeJsonObject(response.body);
     if (response.statusCode == 200 && json['ok'] == true) {
-      return (json['result'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+      return json;
     }
     final errorMessage = json['error'] as String? ?? 'Unknown error';
     switch (response.statusCode) {

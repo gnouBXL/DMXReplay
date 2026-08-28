@@ -6,6 +6,39 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase G: Show management + file transfer
+- `dmxreplay.service.ShowLibrary`: `delete()` and `save()`, both reusing/extending the
+  existing path-traversal defense (`save()` rejects any name that isn't a bare
+  `.dmxr` filename before it ever reaches the containment check; writes via a temp
+  file + `os.replace()` so an interrupted upload never leaves a half-written file in
+  the library).
+- Two new Control API commands: `GET_SHOW_INFO` (real manifest metadata for any show
+  in the library -- duration/fps/encoding/universe count/audio/video/file size, not
+  just the currently-loaded show) and `DELETE_SHOW` (refuses to delete the show that
+  is currently *playing*, returns the updated `GET_SHOWS` listing).
+- One new HTTP-only endpoint, `PUT /api/v1/shows/{name}` -- uploads a `.dmxr` file's
+  raw bytes (512 MiB cap, buffered in memory, a documented tradeoff). Deliberately
+  outside the JSON command protocol, since JSON isn't a reasonable transport for an
+  arbitrary binary payload. The server re-opens the uploaded file to confirm it's a
+  real DMXReplay container before accepting it, deleting it again on any failure.
+- **A real, pre-existing bug found and fixed while building this**: exceptions the
+  underlying `Player`/`ShowLibrary` calls raise (`ShowNotFoundError` and similar --
+  plain `ValueError`/`OSError`/`RuntimeError`, not `CommandError`) were not caught by
+  `_dispatch_to_response`/`_handle_ws_message`, so e.g. `LOAD_SHOW` on a file that no
+  longer exists returned an unhandled-exception HTTP 500 instead of the 409
+  `docs/MOBILE_API.md` §7 has always documented. Both handlers now catch the broader
+  exception set; regression test added.
+- Mobile app (`mobile/`) updated to match: `DmxReplayRestClient.getShowInfo()`/
+  `deleteShow()`/`uploadShowBytes()`, wired into `ShowsScreen` as a per-show info
+  dialog and delete-with-confirmation. Upload has no file-picker UI yet -- documented
+  as a follow-up in `docs/MOBILE.md` (needs a file-picker plugin this project doesn't
+  currently depend on).
+- 27 new tests, all real (real `.dmxr` files, real filesystem operations for
+  delete/save, real HTTP round trips against `aiohttp`'s test server for the upload
+  endpoint and the 409-not-500 fix) -- full suite now 292 passed, 1 skipped.
+- `docs/API.md` §9/§10, `docs/MOBILE_API.md`, `docs/MOBILE.md`, `docs/ARCHITECTURE.md`,
+  `README.md` updated.
+
 ### Added — Cross-platform extension Phase F: Mobile remote controller (Flutter)
 - New `mobile/` project: a real, production-structured Flutter app remote-controlling
   a DMXReplay device over Phase D's Control API -- **never** part of the real-time DMX

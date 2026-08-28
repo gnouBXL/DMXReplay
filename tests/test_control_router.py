@@ -15,7 +15,7 @@ from dmxreplay.control import COMMANDS, CommandError, CommandRouter, UnknownComm
 from dmxreplay.dmx import CHANNELS_PER_UNIVERSE, DMXFrame, Universe
 from dmxreplay.metadata import Manifest, UniverseMapping
 from dmxreplay.network.artnet import ArtNetListener
-from dmxreplay.service import PlayerService, RecorderService
+from dmxreplay.service import PlayerService, RecorderService, ShowNotFoundError
 
 FRAME_PERIOD_NS = 20_000_000
 
@@ -226,6 +226,62 @@ def test_get_recorder_status_without_recorder_service_raises_command_error():
     async def body():
         with pytest.raises(CommandError, match="no Recorder service"):
             await router.dispatch("GET_RECORDER_STATUS")
+
+    asyncio.run(body())
+
+
+def test_get_show_info_and_delete_show_commands(tmp_path):
+    _write_show(str(tmp_path / "A.dmxr"))
+    _write_show(str(tmp_path / "B.dmxr"))
+
+    async def body():
+        router = CommandRouter(player_service=PlayerService(shows_directory=str(tmp_path)))
+
+        info = await router.dispatch("GET_SHOW_INFO", {"name": "A.dmxr"})
+        assert info["name"] == "A.dmxr"
+        assert info["encoding"] == "grayscale"
+
+        shows = await router.dispatch("DELETE_SHOW", {"name": "A.dmxr"})
+        assert shows == ["B.dmxr"]  # DELETE_SHOW returns the updated library listing
+
+    asyncio.run(body())
+    assert not (tmp_path / "A.dmxr").exists()
+    assert (tmp_path / "B.dmxr").exists()
+
+
+def test_get_show_info_without_name_raises_command_error():
+    router = CommandRouter(player_service=PlayerService())
+
+    async def body():
+        with pytest.raises(CommandError, match="name"):
+            await router.dispatch("GET_SHOW_INFO", {})
+
+    asyncio.run(body())
+
+
+def test_delete_show_without_name_raises_command_error():
+    router = CommandRouter(player_service=PlayerService())
+
+    async def body():
+        with pytest.raises(CommandError, match="name"):
+            await router.dispatch("DELETE_SHOW", {})
+
+    asyncio.run(body())
+
+
+def test_load_show_on_a_file_that_no_longer_exists_raises_show_not_found_error(tmp_path):
+    """docs/MOBILE_API.md §7's documented 409 row ("A Player/Recorder call
+    itself raises") -- LOAD_SHOW propagates ShowLibrary's ShowNotFoundError,
+    which the router itself doesn't catch (it's not a CommandError); it's
+    dmxreplay.control.server's job to translate it into an HTTP 409, tested
+    in test_control_server.py. Here we just confirm the router lets it
+    through as a real exception rather than swallowing or mistranslating
+    it."""
+    router = CommandRouter(player_service=PlayerService(shows_directory=str(tmp_path)))
+
+    async def body():
+        with pytest.raises(ShowNotFoundError):
+            await router.dispatch("LOAD_SHOW", {"name": "ghost.dmxr"})
 
     asyncio.run(body())
 

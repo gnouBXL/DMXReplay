@@ -104,6 +104,40 @@ void main() {
     });
   });
 
+  group('ShowInfo.fromJson', () {
+    test('parses a GET_SHOW_INFO response', () {
+      final info = ShowInfo.fromJson(const {
+        'name': 'MyShow.dmxr',
+        'duration_seconds': 342.0,
+        'fps': 44.0,
+        'vfr': false,
+        'encoding': 'grayscale',
+        'universe_count': 2,
+        'has_audio': true,
+        'has_external_video': false,
+        'created_at': '2026-08-27T00:00:00Z',
+        'show_name': null,
+        'description': null,
+        'file_size_bytes': 88412031,
+      });
+
+      expect(info.name, 'MyShow.dmxr');
+      expect(info.durationSeconds, 342.0);
+      expect(info.universeCount, 2);
+      expect(info.hasAudio, isTrue);
+      expect(info.hasExternalVideo, isFalse);
+      expect(info.fileSizeBytes, 88412031);
+    });
+
+    test('missing fields fall back to sensible defaults', () {
+      final info = ShowInfo.fromJson(const {});
+      expect(info.name, '');
+      expect(info.durationSeconds, 0.0);
+      expect(info.fps, isNull);
+      expect(info.fileSizeBytes, isNull);
+    });
+  });
+
   group('DeviceEndpoint', () {
     test('httpBase/wsUri build the right URIs from host/port', () {
       const endpoint = DeviceEndpoint(name: 'Stage Pi', host: '10.0.0.5', port: 8080);

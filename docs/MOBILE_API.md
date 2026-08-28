@@ -103,6 +103,8 @@ diverge between HTTP and WebSocket.
 |---|---|---|
 | `GET_STATUS` | — | Player |
 | `GET_SHOWS` | — | Player (with a show library configured) |
+| `GET_SHOW_INFO` | `name` (string) | Player |
+| `DELETE_SHOW` | `name` (string) | Player + show library |
 | `LOAD_SHOW` | `name` (string — bare filename from `GET_SHOWS`, or a path) | Player |
 | `PLAY` | — | Player, output configured |
 | `PAUSE` | — | Player |
@@ -127,6 +129,13 @@ convention `Player.seek()`/`frame_step()` already use. `LOAD_SHOW`/`NEXT`/`PREVI
 never reset output configuration — `SET_CONFIG`'s output fields persist across show
 changes (verified: `tests/test_service_player.py`'s
 `test_next_and_previous_show_switch_within_the_library_and_preserve_output`).
+
+`GET_SHOW_INFO` returns per-show metadata (duration/fps/encoding/universe count/
+has_audio/has_external_video/created_at/show_name/description/file_size_bytes) for any
+show in the library, not just the currently-loaded one — see §6's `ShowInfo` shape.
+`DELETE_SHOW` removes a show from the library and returns the updated `GET_SHOWS`
+listing as `result`; it refuses (§7's 409) to delete the show that is currently
+*playing* (stop it first) but permits deleting a show that's merely loaded-but-stopped.
 
 `GET_RECORDER_STATUS` is a read-only poll of the same `RecorderStatus` shape
 `RECORD_START`/`RECORD_STOP` already return (§6) — added for clients that need to
@@ -154,6 +163,32 @@ to `POST /api/v1/command {"command": "GET_STATUS"}` / `{"command": "GET_SHOWS"}`
 GET /api/v1/status
 GET /api/v1/shows
 ```
+
+One more HTTP-only route, outside the JSON command protocol entirely — uploading a
+show (Phase G's "upload from client to Pi"). JSON isn't a reasonable transport for an
+arbitrarily large binary file, so this is a plain `PUT` with the raw `.dmxr` bytes as
+the body, not a command:
+
+```
+PUT /api/v1/shows/{name}
+Authorization: Bearer <token>
+
+<raw .dmxr file bytes>
+```
+
+`{name}` becomes the file's name in the show library — must be a bare filename ending
+in `.dmxr` (no path separators; rejected with a 409, §7). The body is capped at 512 MiB
+(the whole upload is buffered in memory server-side — a documented tradeoff, not a
+silent limitation). On success:
+
+```json
+{"ok": true, "result": {"name": "MyShow.dmxr", "size_bytes": 88412031}}
+```
+
+The server re-opens the uploaded file to confirm it's actually a valid DMXReplay
+container before accepting it (not just any bytes with a `.dmxr` name) — an
+interrupted, truncated, or wrong-format upload gets a 409 and is deleted immediately,
+never left sitting in the library looking like a real, loadable show.
 
 ### WebSocket message shape
 
@@ -191,6 +226,25 @@ that returns one):
   "has_audio": true,
   "has_external_video": false,
   "output_configured": true
+}
+```
+
+**`ShowInfo`** shape (`GET_SHOW_INFO`'s `result`):
+
+```json
+{
+  "name": "MyShow.dmxr",
+  "duration_seconds": 342.0,
+  "fps": 44.0,
+  "vfr": false,
+  "encoding": "grayscale",
+  "universe_count": 2,
+  "has_audio": true,
+  "has_external_video": false,
+  "created_at": "2026-08-27T00:00:00Z",
+  "show_name": null,
+  "description": null,
+  "file_size_bytes": 88412031
 }
 ```
 
@@ -275,9 +329,11 @@ closing the connection — one bad message doesn't kill the session.
   "Discovery, local web config UI, and logs" section, not here. It authenticates
   differently from everything in this document (`?token=` is accepted there
   specifically, unlike §4's rule for the JSON/WebSocket API).
-- **File transfer** (uploading a `.dmxr`/video pair to the device's show library) is
-  Phase G — not implemented; `LOAD_SHOW`/`GET_SHOWS` operate only on files already
-  present in the configured show library directory.
+- **File transfer**: uploading a `.dmxr` file to the device's show library is
+  implemented (Phase G) — `PUT /api/v1/shows/{name}` (§5). An external-video companion
+  file (`load_external_video`, `docs/API.md` §9) has no upload path of its own yet;
+  today it has to already be present on the device's filesystem at whatever path
+  `LOAD_SHOW`'s external-video pairing expects, same as before this phase.
 - **`GET_NETWORK_STATUS`** currently reports only the configured Art-Net/sACN output
   settings (protocol/interface/destination/port/priority), not general host network
   interface status (link state, IP addresses of all interfaces, etc.) — the local web

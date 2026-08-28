@@ -451,10 +451,15 @@ class ShowLibrary:
     def __init__(self, directory: str) -> None: ...
     def list_shows(self) -> list[str]: ...                          # sorted .dmxr filenames
     def resolve(self, name: str, *, must_exist: bool = True) -> str: ...  # -> absolute path, rejects anything outside the directory
+    def delete(self, name: str) -> None: ...                        # Phase G
+    def save(self, name: str, data: bytes) -> str: ...               # Phase G -- atomic write, -> resolved path
 
 class PlayerService:
     def __init__(self, shows_directory: str | None = None, clock_provider: ClockProvider | None = None) -> None: ...
     def get_shows(self) -> list[str]: ...
+    def get_show_info(self, name_or_path: str) -> dict: ...          # Phase G -- duration/encoding/universe count/... + file_size_bytes
+    def delete_show(self, name: str) -> None: ...                    # Phase G -- raises if it's the currently-playing show
+    def upload_show(self, name: str, data: bytes) -> dict: ...       # Phase G -- validates it opens as a real .dmxr before accepting
     def load_show(self, name_or_path: str) -> None: ...
     def load_external_video(self, name_or_path: str) -> None: ...
     async def next_show(self) -> None: ...        # ShowNotFoundError if no library/no shows
@@ -497,14 +502,26 @@ completion). Phase D's HTTP/WebSocket Control API will be a thin layer calling t
 same methods; the real-time tick loop stays inside `Player._run_loop()`, never
 duplicated or reimplemented at this layer or the next one.
 
-`ShowLibrary` is deliberately minimal (list + resolve within one directory — upload/
-delete/rich metadata is Phase G, layered on top, not duplicated here), but its path
-resolution is a real security boundary worth getting right *now*: `resolve()` rejects
-any name that resolves (after following symlinks, via `os.path.realpath`) outside the
-library directory — a client-supplied show name reaching this from a future network API
-must never be able to read or overwrite an arbitrary file on the host. Verified by
+`ShowLibrary`'s path resolution is a real security boundary: `resolve()` rejects any
+name that resolves (after following symlinks, via `os.path.realpath`) outside the
+library directory — a client-supplied show name reaching this from the network Control
+API must never be able to read or overwrite an arbitrary file on the host. Verified by
 `tests/test_show_library.py`, including a symlink-escape case, not just the obvious
-`../../etc/passwd` one.
+`../../etc/passwd` one. `delete()`/`save()` (Phase G) reuse that same containment check
+rather than duplicating it; `save()` adds its own equivalent up-front check (a bare
+filename only — `os.path.basename(name) != name` rejects every separator/`..` trick)
+since it deliberately can't rely on `resolve()`'s must-already-exist path. `save()`
+writes via a temp file + `os.replace()` (atomic on POSIX), so an interrupted upload
+never leaves a half-written file for `list_shows()`/`LOAD_SHOW` to trip over.
+
+`PlayerService.get_show_info()` opens the target file with `DMXReplayReader` (§7's
+`dmxreplay-info` CLI does the same) to report real manifest fields — duration, fps,
+encoding, universe count, whether it has audio/external video — plus `file_size_bytes`
+from the filesystem; it works on any show, not just the currently-loaded one.
+`upload_show()` writes the uploaded bytes via `ShowLibrary.save()` and then immediately
+re-opens the result with `DMXReplayReader` purely to confirm it parses as a real
+DMXReplay container, deleting it again on any failure — an interrupted, corrupt, or
+wrong-format upload never ends up sitting in the library looking like a loadable show.
 
 `PlayerService.next_show()`/`previous_show()` rely on (and are tested against) a real,
 already-verified `Player` behavior: `load()` never touches output configuration
@@ -592,6 +609,34 @@ mDNS APIs instead of embedding Python. Full service type/TXT record spec and fai
 modes: `docs/NETWORKING.md` §3. `dmxreplay-server` advertises automatically unless
 started with `--no-mdns`, and never lets an mDNS failure stop the actual Control
 API/DMX output from starting.
+
+### Show management + file transfer (Phase G)
+
+Two new JSON commands (§9's `PlayerService.get_show_info()`/`delete_show()`, both
+through `CommandRouter` exactly like every other command — no new dispatch mechanism)
+plus one new HTTP-only endpoint for the one thing JSON isn't suited for, a binary
+payload:
+
+```
+PUT /api/v1/shows/{name}      -- raw .dmxr bytes as the body; uploads a new show
+```
+
+Deliberately its own endpoint rather than a JSON command: `POST /api/v1/command` is
+JSON in and out (`MOBILE_API.md` §5), not a place to base64-smuggle an arbitrarily
+large file through. `{name}` becomes the file's name in the show library (rejects
+anything but a bare `.dmxr` filename — `ShowLibrary.save()`, §9); the body is
+capped at `MAX_SHOW_UPLOAD_BYTES` (512 MiB — the whole upload is buffered in memory,
+`server.py`, a documented tradeoff, not an oversight; streaming straight to disk would
+remove the cap entirely if a real show ever needs more).
+
+Building this surfaced a real, pre-existing gap fixed in the same phase: exceptions
+`Player`/`ShowLibrary` calls raise (`ShowNotFoundError` on `LOAD_SHOW` for a file
+that no longer exists, an invalid `fps`, ...) are plain `ValueError`/`OSError`/
+`RuntimeError`, not `CommandError` — but `_dispatch_to_response`/`_handle_ws_message`
+only caught `CommandError`, so these were reaching the client as an unhandled-exception
+500 instead of the 409 `MOBILE_API.md` §7 has always documented for exactly this case.
+Both handlers now catch the broader set; `tests/test_control_server.py`'s
+`test_load_show_on_missing_file_returns_409_not_500` is the regression test.
 
 The **local web config UI** (`dmxreplay.control.webui`, extension brief §7/§18) serves
 plain HTML forms at `GET/POST /config`, `POST /config/restart`, `POST /config/shutdown`,

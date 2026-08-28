@@ -65,7 +65,7 @@ toolchain.
 |---|---|
 | `DiscoveryScreen` | Raspberry Pi discovery (mDNS); manual IP connection; pairing token entry |
 | `PlayerScreen` | Device connection/status; Player: play/pause/stop/seek/next/previous; loop; Art-Net/sACN output status |
-| `ShowsScreen` | Show library; show selection |
+| `ShowsScreen` | Show library; show selection; per-show info and delete (Phase G) |
 | `RecorderScreen` | Recording: record start/stop; live duration/frame/packet stats |
 | `SettingsScreen` | Basic Raspberry Pi configuration (protocol/interface/destination/port/priority); network status; forget device |
 
@@ -102,6 +102,16 @@ consistent, reusable pattern rather than each screen inventing its own.
   was added to `dmxreplay.control.CommandRouter` in this same phase, with its own tests
   (`tests/test_control_router.py`) and documentation
   ([MOBILE_API.md](MOBILE_API.md) §5). `RecorderController`'s polling timer uses it.
+- **Show management (Phase G).** `DmxReplayRestClient.getShowInfo()`/`deleteShow()`
+  wrap the `GET_SHOW_INFO`/`DELETE_SHOW` commands; `ShowsScreen` exposes both via a
+  per-show menu (info dialog, delete with a confirmation dialog). `uploadShowBytes()`
+  wraps the new `PUT /api/v1/shows/{name}` endpoint and is fully implemented/tested,
+  but **has no UI wired up in this pass** — letting the user pick a file from the
+  phone's own storage needs a file-picker plugin (e.g. `file_picker` or
+  `file_selector`, both real, commonly-used Flutter packages), which isn't currently a
+  dependency of this project. Adding one is a small, well-scoped follow-up once this
+  app is being compiled/tested for real (§8) — deliberately not added speculatively
+  here without the ability to verify it against a real Flutter toolchain.
 
 ## 5. Dependencies
 

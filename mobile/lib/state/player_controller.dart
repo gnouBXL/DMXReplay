@@ -90,6 +90,38 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  /// `DELETE_SHOW` (docs/MOBILE_API.md §5) -- the Shows screen's delete
+  /// action. Returns true on success so the caller can show/dismiss a
+  /// confirmation without needing to separately read [lastError].
+  Future<bool> deleteShow(String name) async {
+    final client = _connection.restClient;
+    if (client == null) {
+      _lastError = 'Not connected to a device.';
+      notifyListeners();
+      return false;
+    }
+    final result = await _guard(() => client.deleteShow(name));
+    if (result != null) {
+      _shows = result;
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  /// `GET_SHOW_INFO` (docs/MOBILE_API.md §5). Unlike every other method
+  /// here, this doesn't update [status]/[shows] -- it's a one-off lookup
+  /// for a "show details" view, not part of this controller's own state.
+  Future<ShowInfo?> getShowInfo(String name) async {
+    final client = _connection.restClient;
+    if (client == null) {
+      _lastError = 'Not connected to a device.';
+      notifyListeners();
+      return null;
+    }
+    return _guard(() => client.getShowInfo(name));
+  }
+
   Future<void> play() async => _runTransport((c) => c.play());
   Future<void> pause() async => _runTransport((c) => c.pause());
   Future<void> stop() async => _runTransport((c) => c.stop());

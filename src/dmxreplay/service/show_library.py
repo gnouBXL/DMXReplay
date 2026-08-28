@@ -1,13 +1,18 @@
 """A directory of `.dmxr` shows (docs/ARCHITECTURE.md Phase C/G's "show
-library"). Deliberately minimal here -- lists and resolves names within
-one directory; upload/delete/rich metadata is Phase G, layered on top of
-this, not duplicating it.
+library"). Lists/resolves names within one directory (Phase C); `delete()`/
+`save()` (Phase G) add delete and upload, layered on the same `resolve()`
+containment check rather than duplicating it. Rich per-show metadata
+(duration/encoding/universe count/...) is `PlayerService.get_show_info()`,
+which opens the file itself -- not this class's job, since it only knows
+about paths, not container internals.
 
 Path-traversal defense is the one thing worth taking seriously even at
-this small scope: `resolve()` is the boundary a future network API (Phase
-D) will call with a client-supplied string, so "../../etc/passwd" or an
+this small scope: `resolve()` is the boundary the network Control API
+(Phase D) calls with a client-supplied string, so "../../etc/passwd" or an
 absolute path elsewhere on disk must be rejected here, once, rather than
-trusted to every future caller to check.
+trusted to every future caller to check. `save()` adds its own equivalent
+check up front (see its docstring) since it deliberately can't use
+`resolve()`'s must-already-exist path alone.
 """
 from __future__ import annotations
 
@@ -53,3 +58,34 @@ class ShowLibrary:
         if must_exist and not os.path.isfile(resolved):
             raise ShowNotFoundError(f"{name!r} does not exist in the show library")
         return resolved
+
+    def delete(self, name: str) -> None:
+        """Removes a show from the library (Phase G's "delete via the
+        Control API"). `resolve()` (must_exist=True, the default) is what
+        keeps this from ever deleting outside the library directory."""
+        os.remove(self.resolve(name))
+
+    def save(self, name: str, data: bytes) -> str:
+        """Writes `data` as a new show named `name` (Phase G's "upload from
+        client to Pi") and returns its resolved path. `name` must be a bare
+        filename -- `os.path.basename(name) != name` catches every path-
+        separator/`..` trick in one check, rejecting it before it ever
+        reaches `resolve()`'s own (file-must-already-exist-inside-directory)
+        containment check, which `must_exist=False` here deliberately
+        bypasses since the whole point is that the file doesn't exist yet.
+
+        Written via a temp file + `os.replace()` (atomic on POSIX) so a
+        client that disconnects mid-upload leaves no half-written `.dmxr`
+        file sitting in the library for `list_shows()`/`LOAD_SHOW` to trip
+        over."""
+        if not name or os.path.basename(name) != name:
+            raise ValueError(f"{name!r} is not a valid show file name (no path separators allowed)")
+        if not name.endswith(".dmxr"):
+            raise ValueError(f"{name!r} must end with .dmxr")
+        os.makedirs(self._directory, exist_ok=True)
+        target = self.resolve(name, must_exist=False)
+        tmp_path = target + ".part"
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+        os.replace(tmp_path, target)
+        return target
