@@ -6,6 +6,35 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase H: Performance / hardware validation
+- New `benchmark/realtime_playback_benchmark.py`: unlike `player_pipeline_benchmark.py`
+  (Phase B/RASPBERRY_PI.md §4's unthrottled max-throughput measurement), this runs the
+  real `dmxreplay.player.Player`, genuinely paced to real time, against a real Art-Net
+  loopback listener, and measures (1) actual DMX packet-timing jitter and (2) the
+  incremental CPU cost of real audio (AAC, via `DMXReplayWriter`) and real external
+  video (H.264, via `Player.load_external_video()`) decode running alongside DMX --
+  neither of which the existing unthrottled benchmark could capture, since both run on
+  separate PyAV streams off the same `Timeline`, not inside the DMX decode path.
+- Measured at {1, 50} universes × {dmx, audio, video, audio_video}, 30 fps: mean jitter
+  under 3.5 ms at every point (nominal frame period 33.3 ms); video decode costs ~4×
+  the DMX-only CPU fraction, audio costs almost nothing extra. Raw results in
+  `benchmark/realtime_playback_results.json`; full writeup in new `docs/PERFORMANCE.md`,
+  including a Pi 4/5 extrapolation using the same conservative method
+  `docs/RASPBERRY_PI.md` §5 already established.
+- **A real bug in the benchmark itself, caught by the numbers looking implausible, not
+  by inspection**: an early version filtered received packets by the raw 4-bit Art-Net
+  `universe` field alone, which repeats every 16 universes -- at 50 universes this
+  silently over-counted "one representative universe"'s packet arrivals by ~4×,
+  producing a bogus ~25 ms jitter reading. Fixed to match the full `(net, subnet,
+  universe)` triple.
+- `docs/RASPBERRY_PI_INSTALL.md` §7's hardware validation checklist (already existed,
+  unchanged in substance) gained two items this phase's findings motivate directly, and
+  now cross-references `docs/PERFORMANCE.md`. No physical Raspberry Pi exists in this
+  environment -- every number here is honestly labeled as a dev-machine measurement
+  requiring real-hardware confirmation, same caveat this project has used consistently
+  since Phase B.
+- `docs/ARCHITECTURE.md`, `README.md` updated.
+
 ### Added — Cross-platform extension Phase G: Show management + file transfer
 - `dmxreplay.service.ShowLibrary`: `delete()` and `save()`, both reusing/extending the
   existing path-traversal defense (`save()` rejects any name that isn't a bare

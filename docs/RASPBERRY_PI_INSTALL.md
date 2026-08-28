@@ -31,7 +31,7 @@ automatically on boot, `dmxreplay-player` is simpler. Everything below defaults 
 | `packaging/systemd/dmxreplay-{player,server}.service` syntax | **Verified for real** via `systemd-analyze verify` against an actual install at the path each unit expects (`tests/test_packaging.py` re-runs this check on every test run) |
 | `packaging/raspberrypi/install.sh` shell syntax + full run | Verified (`bash -n` in `tests/test_packaging.py`; the script itself was also run for real end-to-end in this project's own environment — venv creation, `pip install -e '.[codec,audio,control]'`, config/directory creation, unit file installation all completed successfully) |
 | `systemctl daemon-reload` specifically | **Not verified** — this project's development environment is a container with no systemd running as PID 1 (`daemon-reload` fails with "Host is down" there); this is expected on any real systemd-based Linux, including Raspberry Pi OS, and only fails to run in this particular sandboxed environment |
-| Running on an actual Raspberry Pi (4 or 5, Raspberry Pi OS) | **Not verified** — no physical Pi in this environment. See `docs/RASPBERRY_PI.md` §0/§10 and `docs/ARCHITECTURE.md` §6/§8's hardware validation checklist. |
+| Running on an actual Raspberry Pi (4 or 5, Raspberry Pi OS) | **Not verified** — no physical Pi in this environment. See `docs/RASPBERRY_PI.md` §0/§10, `docs/PERFORMANCE.md`, and this document's own §7 hardware validation checklist. |
 | `av`/`aiohttp`/`zeroconf` installing from a wheel on Raspberry Pi OS's ARM64 Python | Confirmed compatible wheels *exist* on PyPI (`docs/ARCHITECTURE.md` §1) — not confirmed to actually install/import on real Pi hardware |
 | mDNS advertise + discover | **Verified for real** in this project's own environment (`tests/test_discovery.py`) — but multicast behavior can differ on real network hardware/APs, see `docs/NETWORKING.md` §3's "what can go wrong" |
 
@@ -188,9 +188,20 @@ production appliance on real hardware, confirm on an actual **Raspberry Pi 4** a
 - [ ] `docs/ARCHITECTURE.md` Phase H's full performance matrix (1/10/50/128 universes ×
       DMX/+audio/+video/+audio+video @ 30fps) — CPU, RAM, network throughput, DMX
       timing accuracy, latency, packet loss, dropped frames, sync drift, boot time,
-      and failure-recovery time, on both Pi 4 and Pi 5.
+      and failure-recovery time, on both Pi 4 and Pi 5. Dev-machine numbers for a
+      representative subset of this matrix (not a physical Pi) are in
+      `docs/PERFORMANCE.md`.
 - [ ] Confirm actual boot-to-READY time is reasonable for a lighting appliance (no
       hard number promised anywhere yet — this is where one gets measured for real).
 - [ ] Confirm mDNS actually reaches the phone across whatever real Wi-Fi AP/router is
       in use — `docs/NETWORKING.md` §3 lists known real-world multicast pitfalls
       (AP isolation, VLANs) that this project's own sandboxed network can't reproduce.
+- [ ] Confirm 50-universe `+video`/`+audio+video` CPU cost on a real Pi 4 at the
+      128-universe ceiling specifically (`docs/RASPBERRY_PI.md` §4/§5's own tight scale
+      point, now compounded by video decode's ~4× overhead per `docs/PERFORMANCE.md`
+      §3/§4) — the one combination neither document's extrapolation alone can
+      responsibly clear.
+- [ ] Confirm packet-timing jitter on a real, dedicated Pi is at or below what
+      `docs/PERFORMANCE.md` §3 measured on this project's shared cloud VM — a
+      dedicated real-time-scheduled Pi should, if anything, do better; measurably
+      *worse* jitter would be a genuine, unexpected finding worth investigating.

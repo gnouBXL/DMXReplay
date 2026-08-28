@@ -126,7 +126,7 @@ same core engine and `.dmxr` format, unchanged. See
 | E | Raspberry Pi configuration + discovery | ✅ |
 | F | Mobile remote controller | ⚠️ Flutter app code complete ([docs/MOBILE.md](docs/MOBILE.md)); not compiled/run — no Flutter SDK in this environment |
 | G | Show management + file transfer | ✅ `GET_SHOW_INFO`/`DELETE_SHOW` commands + `PUT /api/v1/shows/{name}` upload endpoint |
-| H | Performance/hardware validation | planned |
+| H | Performance/hardware validation | ⚠️ Dev-machine matrix measured ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)); real Pi 4/5 still required for final confirmation |
 | I | Final packaging + documentation | planned |
 
 `dmxreplay.ui` provides `DMXReplay Player`/`DMXReplay Recorder` desktop GUI apps

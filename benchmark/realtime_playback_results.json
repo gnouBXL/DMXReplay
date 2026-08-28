@@ -1,0 +1,17 @@
+[
+{"universes": 1, "fps": 30, "requested_seconds": 3.0, "variant": "dmx", "packets_received": 87, "wall_seconds": 3.5021, "cpu_seconds": 0.0371, "cpu_fraction_of_one_core": 0.0106, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 1.4298, "max_period_deviation_ms": 15.6813}
+,
+{"universes": 1, "fps": 30, "requested_seconds": 3.0, "variant": "audio", "packets_received": 87, "wall_seconds": 3.5022, "cpu_seconds": 0.0398, "cpu_fraction_of_one_core": 0.0114, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 1.3249, "max_period_deviation_ms": 8.4461}
+,
+{"universes": 1, "fps": 30, "requested_seconds": 3.0, "variant": "video", "packets_received": 84, "wall_seconds": 3.5019, "cpu_seconds": 0.1677, "cpu_fraction_of_one_core": 0.0479, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 2.5406, "max_period_deviation_ms": 3.7524}
+,
+{"universes": 1, "fps": 30, "requested_seconds": 3.0, "variant": "audio_video", "packets_received": 82, "wall_seconds": 3.5014, "cpu_seconds": 0.1629, "cpu_fraction_of_one_core": 0.0465, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 3.4546, "max_period_deviation_ms": 30.8395}
+,
+{"universes": 50, "fps": 30, "requested_seconds": 3.0, "variant": "dmx", "packets_received": 86, "wall_seconds": 3.502, "cpu_seconds": 0.1435, "cpu_fraction_of_one_core": 0.041, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 1.5742, "max_period_deviation_ms": 11.2399}
+,
+{"universes": 50, "fps": 30, "requested_seconds": 3.0, "variant": "audio", "packets_received": 87, "wall_seconds": 3.502, "cpu_seconds": 0.148, "cpu_fraction_of_one_core": 0.0423, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 1.4925, "max_period_deviation_ms": 2.3719}
+,
+{"universes": 50, "fps": 30, "requested_seconds": 3.0, "variant": "video", "packets_received": 84, "wall_seconds": 3.502, "cpu_seconds": 0.2704, "cpu_fraction_of_one_core": 0.0772, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 2.7468, "max_period_deviation_ms": 4.1242}
+,
+{"universes": 50, "fps": 30, "requested_seconds": 3.0, "variant": "audio_video", "packets_received": 83, "wall_seconds": 3.5017, "cpu_seconds": 0.2762, "cpu_fraction_of_one_core": 0.0789, "nominal_period_ms": 33.333, "mean_period_deviation_ms": 2.9633, "max_period_deviation_ms": 9.4569}
+]
