@@ -71,10 +71,14 @@ need it).
 
 A client discovers devices by browsing `_dmxreplay._tcp.local.` — `dmxreplay.control.
 discover_devices()` is a reference implementation (`src/dmxreplay/control/
-discovery.py`) using the same `zeroconf` library the server uses to advertise; the
-mobile app (Phase F) will use its own platform's native mDNS APIs (`NSNetService`/
-Bonjour on iOS, `NsdManager` on Android) instead of embedding Python, but the wire
-format — standard mDNS/DNS-SD — is identical either way.
+discovery.py`) using the same `zeroconf` library the server uses to advertise. The
+mobile app (Phase F, `mobile/lib/discovery/device_discovery_service.dart`) instead uses
+the Flutter team's own `multicast_dns` package — a cross-platform mDNS client rather
+than each platform's separate native API (`NSNetService`/Bonjour on iOS, `NsdManager`
+on Android), avoiding two separate platform-channel implementations for one app — but
+the wire format — standard mDNS/DNS-SD — is identical either way, and the same
+`api_version`/`auth_required` TXT record shape this document specifies is what both
+sides parse.
 
 **Discovery is never required.** Every DMXReplay Control API client can connect
 directly by IP:port with no mDNS involved at all (`docs/MOBILE_API.md` §1) — this is

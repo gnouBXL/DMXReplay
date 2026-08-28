@@ -3,7 +3,9 @@
 Companion to [ARCHITECTURE.md](ARCHITECTURE.md) (Phase A). Covers building the
 `DMXReplay Player`/`DMXReplay Recorder` desktop GUI apps (`src/dmxreplay/ui`) into
 distributable packages for Windows, macOS, and Linux, without the user needing Python
-installed.
+installed. This is the Python/desktop packaging story specifically — the mobile
+remote-controller app (`mobile/`, Phase F) has its own, entirely separate Flutter build
+process, covered in [MOBILE.md](MOBILE.md) §8-§9 and `mobile/README.md`, not here.
 
 ## 1. What this covers, and what it doesn't yet
 

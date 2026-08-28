@@ -6,6 +6,27 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Changed — Cross-platform extension Phase I: Final packaging + documentation pass
+- Every doc this phase covers (`ARCHITECTURE.md`, `API.md`, `RASPBERRY_PI.md`,
+  `RASPBERRY_PI_INSTALL.md`, `MOBILE.md`, `MOBILE_API.md`, `NETWORKING.md`,
+  `BUILD_AND_DISTRIBUTION.md`) had already been kept current phase-by-phase; this pass
+  swept for what incremental updates miss -- stale *predictive* statements written
+  before the thing they predicted was actually built.
+- Fixed two: `docs/API.md` §10 and `docs/NETWORKING.md` §3 both said the mobile app
+  "will use its platform's own native mDNS APIs" (`NSNetService`/`NsdManager`) --
+  written during the Phase E audit, before Phase F was actually implemented using the
+  Flutter team's cross-platform `multicast_dns` package instead. Also fixed a
+  leftover "once it exists" phrasing about the mobile app in `docs/API.md` §10.
+- `docs/BUILD_AND_DISTRIBUTION.md` gained a pointer to `docs/MOBILE.md` for the mobile
+  app's separate Flutter build process; `docs/RASPBERRY_PI.md` §10 gained a
+  cross-reference to `docs/PERFORMANCE.md`'s new audio/video decode cost measurement.
+- All shell scripts (`packaging/*.sh`, `benchmark/*.sh`) re-verified with `bash -n`;
+  full test suite re-run clean as the final packaging check (292 passed, 1 skipped).
+- `README.md`'s top status line and phase table updated to reflect all nine phases
+  landed, with Phase F (mobile app code-complete, not compiled) and Phase H (dev-machine
+  measurements only)'s hardware-pending caveats carried through rather than smoothed
+  over.
+
 ### Added — Cross-platform extension Phase H: Performance / hardware validation
 - New `benchmark/realtime_playback_benchmark.py`: unlike `player_pipeline_benchmark.py`
   (Phase B/RASPBERRY_PI.md §4's unthrottled max-throughput measurement), this runs the

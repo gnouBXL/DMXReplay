@@ -6,9 +6,12 @@ a standard video container, and replayed later with accurate timing — synchron
 audio, with an external video file, and eventually with external timecode sources.
 
 > **Status:** early development (V1, Phase 0–10 done: the core engine is
-> feature-complete). Now extending into a cross-platform ecosystem (Windows/macOS
-> desktop GUIs, Raspberry Pi appliance, smartphone remote control) — see
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and current phase status.
+> feature-complete). The cross-platform ecosystem extension (Windows/macOS desktop
+> GUIs, Raspberry Pi appliance, smartphone remote control) — Phases A–I — has also
+> landed; the one open item is Phase F's mobile app, which is code-complete but not yet
+> compiled/run (no Flutter SDK in this project's development environment) and Phase
+> H/parts of B's Pi-hardware validation, which still needs a physical Raspberry Pi. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full phase-by-phase status.
 > The format is not yet stable. See [CHANGELOG.md](CHANGELOG.md) and
 > [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
@@ -127,7 +130,7 @@ same core engine and `.dmxr` format, unchanged. See
 | F | Mobile remote controller | ⚠️ Flutter app code complete ([docs/MOBILE.md](docs/MOBILE.md)); not compiled/run — no Flutter SDK in this environment |
 | G | Show management + file transfer | ✅ `GET_SHOW_INFO`/`DELETE_SHOW` commands + `PUT /api/v1/shows/{name}` upload endpoint |
 | H | Performance/hardware validation | ⚠️ Dev-machine matrix measured ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)); real Pi 4/5 still required for final confirmation |
-| I | Final packaging + documentation | planned |
+| I | Final packaging + documentation | ✅ Consistency pass across all docs; two stale pre-Phase-F predictive statements found and corrected |
 
 `dmxreplay.ui` provides `DMXReplay Player`/`DMXReplay Recorder` desktop GUI apps
 (`dmxreplay-player-gui`/`dmxreplay-recorder-gui`), built on Tkinter (Python's own

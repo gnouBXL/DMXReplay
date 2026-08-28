@@ -324,7 +324,11 @@ Explicitly not claimed as validated by this document:
   environment has none (§8's update).
 - Phase 8 (external video): whether `ExternalVideoReader`'s software-only decode
   (§8's update) is fast enough for 1080p on a Pi 4 in practice, and whether enabling
-  hardware-accelerated decode is worth doing.
+  hardware-accelerated decode is worth doing. [PERFORMANCE.md](PERFORMANCE.md) (Phase H)
+  has since measured this document's audio/video decode cost on the same non-Pi
+  reference machine (at a small 64×48 test resolution, not 1080p) — video decode costs
+  roughly 4× the DMX-only CPU fraction there; still not a real Pi 4 number, but a real
+  data point this section didn't have before.
 
 ## 11. Validation test: Art-Net → Recorder → `.dmxr` → Player → Art-Net
 

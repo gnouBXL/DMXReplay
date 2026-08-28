@@ -604,8 +604,9 @@ class RingBufferLogHandler(logging.Handler):
 `DeviceAdvertiser` wraps the `zeroconf` library (`pip install dmxreplay[control]`,
 same extra as `aiohttp` — one `[control]` install gets the whole network layer) to
 advertise `DMXReplay-<name>._dmxreplay._tcp.local.`; `discover_devices()` is a
-reference client, since the mobile app (Phase F) will use its platform's own native
-mDNS APIs instead of embedding Python. Full service type/TXT record spec and failure
+reference client — the mobile app (Phase F) instead uses the Flutter team's
+`multicast_dns` package rather than embedding Python or writing two separate native
+platform-channel implementations (`docs/NETWORKING.md` §3's note). Full service type/TXT record spec and failure
 modes: `docs/NETWORKING.md` §3. `dmxreplay-server` advertises automatically unless
 started with `--no-mdns`, and never lets an mDNS failure stop the actual Control
 API/DMX output from starting.
@@ -641,8 +642,9 @@ Both handlers now catch the broader set; `tests/test_control_server.py`'s
 The **local web config UI** (`dmxreplay.control.webui`, extension brief §7/§18) serves
 plain HTML forms at `GET/POST /config`, `POST /config/restart`, `POST /config/shutdown`,
 and `GET /config/logs` — for first-time/no-screen setup, a fallback to the mobile app
-(Phase F remains the *preferred* interface once it exists, per the brief's own stated
-priority). Rendering (`webui.py`) is pure functions with no `aiohttp` import, testable
+(Phase F, `docs/MOBILE.md`, remains the *preferred* interface day-to-day, per the
+brief's own stated priority — the web UI's job is first-time/no-app setup, not
+replacing the app). Rendering (`webui.py`) is pure functions with no `aiohttp` import, testable
 without a live server (`tests/test_webui.py`); wired into `ControlServer`'s routes in
 `server.py`. Living in `dmxreplay.control`, not `dmxreplay.ui`: serving HTML strings is
 not "depending on a GUI toolkit" in `CONTRIBUTING.md`'s sense — no Tkinter/Qt/Electron
