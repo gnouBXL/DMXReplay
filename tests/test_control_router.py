@@ -180,6 +180,56 @@ def test_record_start_stop_commands(tmp_path):
     assert decoded[-1].universes[0].get_channel(1) == 88
 
 
+def test_get_recorder_status_polls_without_restarting_recording(tmp_path):
+    """A real gap found while building the Phase F mobile client: without
+    this command, the only way to see live recording duration/packet
+    counts was to call RECORD_START again -- which restarts the
+    recording, corrupting exactly the state a status poll should just be
+    reading."""
+    from dmxreplay.network.artnet import ArtNetSender
+
+    async def body():
+        recorder = RecorderService(shows_directory=str(tmp_path))
+        await recorder.add_source("Art-Net", "127.0.0.1", port=0)
+        port = recorder._recorder._artnet_listeners[0]._transport.get_extra_info("sockname")[1]
+
+        sender = ArtNetSender()
+        await sender.start(interface_ip="127.0.0.1")
+        sender.send(net=0, subnet=0, universe=1, data=bytes([1, 0]), destination_ip="127.0.0.1", port=port)
+        await asyncio.sleep(0.02)
+
+        router = CommandRouter(recorder_service=recorder)
+        await router.dispatch("RECORD_START", {"filename": "polled.dmxr"})
+
+        # Poll twice -- must not restart/reset the recording each time.
+        first_poll = await router.dispatch("GET_RECORDER_STATUS")
+        assert first_poll["recording"] is True
+        frame_count_after_first_poll = first_poll["frame_count"]
+
+        sender.send(net=0, subnet=0, universe=1, data=bytes([2, 0]), destination_ip="127.0.0.1", port=port)
+        await asyncio.sleep(0.02)
+
+        second_poll = await router.dispatch("GET_RECORDER_STATUS")
+        assert second_poll["recording"] is True
+        assert second_poll["frame_count"] > frame_count_after_first_poll  # kept accumulating, not reset
+
+        await router.dispatch("RECORD_STOP")
+        sender.stop()
+        await recorder.shutdown()
+
+    asyncio.run(body())
+
+
+def test_get_recorder_status_without_recorder_service_raises_command_error():
+    router = CommandRouter()  # no recorder_service
+
+    async def body():
+        with pytest.raises(CommandError, match="no Recorder service"):
+            await router.dispatch("GET_RECORDER_STATUS")
+
+    asyncio.run(body())
+
+
 def test_record_start_without_filename_raises_command_error(tmp_path):
     router = CommandRouter(recorder_service=RecorderService(shows_directory=str(tmp_path)))
 

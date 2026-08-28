@@ -124,7 +124,7 @@ same core engine and `.dmxr` format, unchanged. See
 | C | Long-running commandable Player/Recorder service | ✅ |
 | D | Control API (HTTP + WebSocket) | ✅ |
 | E | Raspberry Pi configuration + discovery | ✅ |
-| F | Mobile remote controller | planned |
+| F | Mobile remote controller | ⚠️ Flutter app code complete ([docs/MOBILE.md](docs/MOBILE.md)); not compiled/run — no Flutter SDK in this environment |
 | G | Show management + file transfer | planned |
 | H | Performance/hardware validation | planned |
 | I | Final packaging + documentation | planned |

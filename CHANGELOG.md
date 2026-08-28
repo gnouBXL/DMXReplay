@@ -6,6 +6,41 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase F: Mobile remote controller (Flutter)
+- New `mobile/` project: a real, production-structured Flutter app remote-controlling
+  a DMXReplay device over Phase D's Control API -- **never** part of the real-time DMX
+  timing loop (`docs/MOBILE.md` §1). Independent of the Python package (no shared
+  build), so it can be developed/compiled entirely on its own toolchain.
+- `mobile/lib/api`: `DmxReplayRestClient` (every command in
+  `docs/MOBILE_API.md` §5), `DmxReplayWebSocketClient` (receive-only -- status
+  broadcast only, commands go over REST since the WS protocol has no
+  request-id/correlation field, capped-exponential-backoff reconnect that re-runs the
+  auth handshake on every attempt), typed `DmxReplayException` hierarchy, and models
+  mirroring `PlayerStatus`/`RecorderStatus`/`DeviceConfig` field-for-field.
+- `mobile/lib/discovery`: mDNS device discovery (`multicast_dns`), mirroring
+  `dmxreplay.control.discovery`'s advertised service/TXT record; manual IP connection
+  always works with zero dependency on discovery.
+- `mobile/lib/state`: `ConnectionController`/`PlayerController`/`RecorderController`
+  (`ChangeNotifier`-based, no extra state-management package) and 5 screens
+  (discovery/pairing, player transport+timeline+loop+output status, show library,
+  recorder start/stop+live stats, output/network settings) plus shared connection
+  status/error widgets.
+- **A real API gap found while building this client, fixed at the source**: there was
+  no way to poll live recorder status without calling `RECORD_START` again, which
+  restarts the recording. Added `GET_RECORDER_STATUS` to
+  `dmxreplay.control.CommandRouter` (2 new tests in `tests/test_control_router.py`,
+  265 total passing) and documented it in `docs/MOBILE_API.md`, rather than leaving
+  the mobile client with dead/no-op polling code.
+- **This environment has no Flutter SDK.** The Dart code has not been compiled,
+  analyzed, or run -- see `docs/MOBILE.md` §8/`mobile/README.md` for the exact
+  validation status and the commands a developer with Flutter installed should run
+  next (`flutter create`, `pub get`, `analyze`, `test`, `run`). Dart tests are written
+  (`mobile/test/`: model parsing, REST client request/response shapes via
+  `package:http/testing.dart`'s real `MockClient`, mDNS TXT-record parsing, two widget
+  tests) but likewise not executed here.
+- New `docs/MOBILE.md`; `docs/MOBILE_API.md`, `docs/ARCHITECTURE.md`, `README.md`
+  updated.
+
 ### Added — Cross-platform extension Phase E: Raspberry Pi discovery + local web config UI
 - `dmxreplay.control.discovery`: `DeviceAdvertiser` (mDNS advertisement as
   `DMXReplay-<name>._dmxreplay._tcp.local.` via `zeroconf`, TXT records for

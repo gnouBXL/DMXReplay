@@ -112,6 +112,7 @@ diverge between HTTP and WebSocket.
 | `PREVIOUS` | — | Player + show library |
 | `RECORD_START` | `filename` (string) | Recorder (`dmxreplay-server --enable-recorder`) |
 | `RECORD_STOP` | — | Recorder |
+| `GET_RECORDER_STATUS` | — | Recorder |
 | `GET_CONFIG` | — | Player |
 | `SET_CONFIG` | `loop`?, `speed`?, `fps`?, `protocol`?, `interface_ip`?, `destination_ip`?, `port`?, `priority`? (all optional; output fields only applied if `protocol` is present) | Player |
 | `GET_NETWORK_STATUS` | — | Player |
@@ -126,6 +127,15 @@ convention `Player.seek()`/`frame_step()` already use. `LOAD_SHOW`/`NEXT`/`PREVI
 never reset output configuration — `SET_CONFIG`'s output fields persist across show
 changes (verified: `tests/test_service_player.py`'s
 `test_next_and_previous_show_switch_within_the_library_and_preserve_output`).
+
+`GET_RECORDER_STATUS` is a read-only poll of the same `RecorderStatus` shape
+`RECORD_START`/`RECORD_STOP` already return (§6) — added for clients that need to
+show live recording duration/frame/packet counts while a recording is in
+progress, without re-issuing `RECORD_START` (which
+would restart the recording, discarding what's already captured) and without
+waiting for the operator to call `RECORD_STOP`. Calling it repeatedly never
+changes recorder state (verified:
+`tests/test_control_router.py::test_get_recorder_status_polls_without_restarting_recording`).
 
 ### HTTP request shape
 

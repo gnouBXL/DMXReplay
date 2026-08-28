@@ -1,0 +1,48 @@
+name: dmxreplay_controller
+description: >
+  DMXReplay Remote Controller -- a touch-first smartphone remote control for
+  a DMXReplay Raspberry Pi appliance. Talks only to the DMXReplay Control
+  API (HTTP + WebSocket, ../docs/MOBILE_API.md); never generates or sends
+  DMX itself. See ../docs/MOBILE.md.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP client for the REST half of the Control API (docs/MOBILE_API.md
+  # §5) -- the official Dart team package, not a third-party wrapper.
+  http: ^1.6.0
+
+  # WebSocket client for the real-time command channel + status broadcast
+  # (docs/MOBILE_API.md §6) -- the official Dart team package
+  # (dart-lang/http monorepo), cross-platform (mobile/desktop/web).
+  web_socket_channel: ^3.0.3
+
+  # mDNS discovery of DMXReplay devices (docs/NETWORKING.md §3) -- the
+  # Flutter team's own mDNS/DNS-SD package, pure Dart, used here as a
+  # pull-based one-shot browse rather than the OS-level Bonjour/NSD APIs a
+  # future native implementation might prefer (see docs/MOBILE.md's note
+  # on platform-specific permission requirements this implies).
+  multicast_dns: ^0.3.3
+
+  # Persists the paired device (IP, port, name) and API token across app
+  # restarts -- "pairing" is read-the-token-once, docs/MOBILE_API.md §4;
+  # this is where the app remembers it afterward. The standard, officially
+  # Flutter-team-maintained key-value storage package.
+  shared_preferences: ^2.5.5
+
+  cupertino_icons: ^1.0.9
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

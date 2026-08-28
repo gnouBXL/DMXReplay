@@ -138,6 +138,17 @@ async def _record_stop(router: CommandRouter, params: dict) -> Any:
     return _to_jsonable(recorder.get_status())
 
 
+async def _get_recorder_status(router: CommandRouter, params: dict) -> Any:
+    """A read-only status poll, distinct from RECORD_START/RECORD_STOP,
+    which also return RecorderStatus as a side effect of actually starting/
+    stopping -- added after Phase F's mobile client needed a way to show
+    live recording duration/packet counts without re-issuing RECORD_START
+    (which would restart the recording) or waiting for the operator to
+    stop it. A real gap found while building the client that consumes
+    this API, not speculative -- see docs/MOBILE.md's RecorderController."""
+    return _to_jsonable(router.require_recorder().get_status())
+
+
 async def _get_config(router: CommandRouter, params: dict) -> Any:
     player = router.require_player()
     config = player.get_config()
@@ -185,6 +196,7 @@ _HANDLERS: dict[str, CommandHandler] = {
     "PREVIOUS": _previous,
     "RECORD_START": _record_start,
     "RECORD_STOP": _record_stop,
+    "GET_RECORDER_STATUS": _get_recorder_status,
     "GET_CONFIG": _get_config,
     "SET_CONFIG": _set_config,
     "GET_NETWORK_STATUS": _get_network_status,
