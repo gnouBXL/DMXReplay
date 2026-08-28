@@ -6,6 +6,37 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase B: Raspberry Pi ARM64/headless foundation
+- `src/dmxreplay/config`: `PlayerConfig`, a real TOML loader implementing exactly the
+  config shape `docs/RASPBERRY_PI.md` §14 proposed (but never parsed) since Phase 4 --
+  `show`/`video`/`output`/`interface`/`destination`/`port`/`priority`/`loop`/
+  `autoplay`/`fps`/`speed`. Fails closed on an unknown key or malformed TOML
+  (`InvalidPlayerConfigError`) rather than silently ignoring a typo in an unattended
+  service's config file. Local machine configuration only -- never embedded in or
+  read from a `.dmxr` file.
+- `dmxreplay-play` gains `--config PATH` (any other CLI flag overrides the matching
+  config value) and `--video`/`--autoplay`; `input` and `--output` are no longer
+  required at the argument-parsing level (only required if `--config` doesn't
+  supply them). `autoplay = false` now has defined behavior: load and configure
+  output, then idle rather than play or exit -- needed so a systemd service can
+  start successfully and be observed even before Phase C's remote control surface
+  exists to tell it *when* to play.
+- `packaging/systemd/dmxreplay-player.service` (`Restart=on-failure`, capped restart
+  rate, journal logging), `packaging/raspberrypi/install.sh` (creates a system user,
+  a venv at `/opt/dmxreplay`, config/show directories, installs the unit),
+  `packaging/raspberrypi/player.toml.example`.
+- **A real bug found and fixed by actually verifying this, not by inspection**: the
+  systemd unit's first draft put `StartLimitIntervalSec`/`StartLimitBurst` in the
+  `[Service]` section instead of `[Unit]` -- `systemd-analyze verify` (run for real
+  against an actual install at the unit's expected path, and now re-checked on every
+  test run via `tests/test_packaging.py`) caught it immediately with "Unknown key
+  name... ignoring."
+- New `docs/RASPBERRY_PI_INSTALL.md` (install/configure/enable/update/uninstall
+  walkthrough + a hardware validation checklist for real Pi 4/5, clearly separating
+  what's verified here from what genuinely needs physical hardware).
+  `docs/RASPBERRY_PI.md` §14, `docs/API.md`, `docs/ARCHITECTURE.md`, `README.md`
+  updated to match.
+
 ### Added — Cross-platform extension Phase A: Desktop GUIs + packaging
 - `src/dmxreplay/ui`: real, functional `DMXReplay Player`/`DMXReplay Recorder` desktop
   GUI apps (Tkinter — Python's own stdlib GUI toolkit, zero new pip dependency),

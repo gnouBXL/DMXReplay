@@ -432,12 +432,21 @@ a minimal loopback-only HTTP endpoint) remains the proposed shape, deliberately 
 not decided/built, consistent with not designing a remote-control protocol under time
 pressure just to check a box.
 
-## 14. Auto-start on boot — proposed shape (not implemented yet)
+## 14. Auto-start on boot — implemented (cross-platform extension Phase B)
 
-Per the brief, full auto-start is explicitly deferred to a later phase; only the
-architecture needs to accommodate it now. Proposed (not applied): a small config file
-(e.g. `/etc/dmxreplay/player.toml` or similar) that `--headless` can optionally load
-instead of requiring every option on the command line:
+**Update, Phase B:** built essentially as proposed below. `dmxreplay.config.PlayerConfig`
+(`src/dmxreplay/config/loader.py`) parses exactly this TOML shape (field names
+unchanged from the original proposal); `dmxreplay-play --headless --config
+/etc/dmxreplay/player.toml` (`src/dmxreplay/cli/play.py`) loads it, with any other CLI
+flag overriding the matching config value. A real systemd unit
+(`packaging/systemd/dmxreplay-player.service`) and install script
+(`packaging/raspberrypi/install.sh`) exist — see `docs/RASPBERRY_PI_INSTALL.md`. One
+addition beyond the original proposal: `autoplay = false` now has defined behavior
+(load and configure output, then idle rather than play or exit), needed so the
+systemd service can start successfully and be health-checked even before Phase C's
+remote control surface exists to tell it *when* to play.
+
+Original proposal, kept for the record:
 
 ```toml
 show = "MyShow.dmxr"

@@ -335,6 +335,7 @@ Thin wrappers over §4/§5, per brief §51 (`src/dmxreplay/cli/{record,play,info
 ```
 dmxreplay-record --input artnet --interface 0.0.0.0 --fps 30 --output show.dmxr
 dmxreplay-play show.dmxr --output artnet --destination 192.168.1.100 --loop
+dmxreplay-play --headless --config /etc/dmxreplay/player.toml   # docs/RASPBERRY_PI_INSTALL.md
 dmxreplay-info show.dmxr [--frames]
 dmxreplay-convert show.dmxr show_with_audio.dmxr --add-audio song.wav
 ```
@@ -351,12 +352,23 @@ freezing the universe set and starting to write, matching the brief §28 recorde
 discover-then-checkbox-then-record flow; stops on Ctrl+C/SIGTERM.
 `dmxreplay-play` accepts `--headless` (accepted for compatibility with the auto-start
 config shape in `docs/RASPBERRY_PI.md` §14 — this CLI never imports a GUI toolkit, so
-behavior doesn't actually change with or without the flag) plus `--loop`/`--speed`/
-`--seek`/`--fps`; it plays straight through until the file ends (non-looping) or it's
-interrupted (looping). Interactive transport control while running (pause/seek from
-outside the process) is not implemented yet — `docs/RASPBERRY_PI.md` §13 explains why
-that's deferred rather than guessed at now. `dmxreplay-info` prints the parsed
-manifest as JSON; `--frames` additionally lists every frame's timestamp to stderr.
+behavior doesn't actually change with or without the flag), `--config PATH` (loads a
+`dmxreplay.config.PlayerConfig` from TOML, cross-platform extension Phase B — see
+`docs/RASPBERRY_PI_INSTALL.md`; any other CLI flag overrides the matching config value),
+plus `--loop`/`--speed`/`--seek`/`--fps`/`--video`/`--autoplay`. With `autoplay` true
+(the default) it plays straight through until the file ends (non-looping) or it's
+interrupted (looping); with `autoplay = false` it loads and configures output, then
+idles — ready for a future remote-control command (Phase C) rather than playing or
+exiting. Interactive transport control while running (pause/seek from outside the
+process) is not implemented yet — `docs/RASPBERRY_PI.md` §13 explains why that's
+deferred rather than guessed at now. `dmxreplay-info` prints the parsed manifest as
+JSON; `--frames` additionally lists every frame's timestamp to stderr.
+
+`dmxreplay.config.PlayerConfig` (`src/dmxreplay/config/loader.py`) is local machine
+configuration only — never embedded in or read from a `.dmxr` file, has nothing to do
+with `dmxreplay.metadata`'s manifest schema. Fails closed on an unknown key or
+malformed TOML (`InvalidPlayerConfigError`) rather than silently ignoring a typo in a
+config file nobody is watching interactively.
 
 ## 8. `dmxreplay.ui` — desktop GUIs (implemented, cross-platform extension Phase A)
 

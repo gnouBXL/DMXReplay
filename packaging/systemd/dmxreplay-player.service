@@ -1,0 +1,48 @@
+[Unit]
+Description=DMXReplay Player (headless)
+Documentation=https://github.com/gnouBXL/dmxreplay
+# Real network (not just "the interface exists") before starting -- Art-Net/
+# sACN output needs the target LAN to actually be reachable, and starting
+# earlier would just mean immediate failures during boot. See
+# docs/RASPBERRY_PI_INSTALL.md for why network-online.target (not the
+# weaker network.target) is required here, and the systemd-networkd-wait-
+# online/NetworkManager-wait-online dependency it implies.
+After=network-online.target
+Wants=network-online.target
+# StartLimit* belongs in [Unit], not [Service] (a real mistake this file's
+# own first draft made -- caught by `systemd-analyze verify`, see
+# docs/RASPBERRY_PI_INSTALL.md's note on that command). Caps automatic
+# restarts (below) from looping forever if the underlying problem never
+# clears -- `systemctl status` then shows "start-limit-hit" clearly instead
+# of silent infinite retries.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=dmxreplay
+Group=dmxreplay
+EnvironmentFile=-/etc/dmxreplay/environment
+ExecStart=/opt/dmxreplay/.venv/bin/dmxreplay-play --headless --config /etc/dmxreplay/player.toml
+
+# Automatic restart after application failure (docs/ARCHITECTURE.md §7
+# Phase B / the extension brief's §6 requirement) -- on-failure, not
+# always: a clean `dmxreplay-play` exit (non-looping file finished, or a
+# deliberate `systemctl stop`) must NOT trigger a restart, only a crash or
+# non-zero exit should. RestartSec backs off slightly so a persistently
+# broken config (e.g. a show file that no longer exists) doesn't spin the
+# CPU in a tight restart loop (StartLimit*, [Unit] section above, caps the
+# restart attempts themselves).
+Restart=on-failure
+RestartSec=2
+
+# Useful logging (docs/ARCHITECTURE.md §7 Phase B) -- dmxreplay-play writes
+# its own status lines to stderr already (src/dmxreplay/cli/play.py);
+# routing that to the journal, tagged, is what makes `journalctl -u
+# dmxreplay-player -f` a real live status view with no extra plumbing.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dmxreplay-player
+
+[Install]
+WantedBy=multi-user.target

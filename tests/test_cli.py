@@ -11,6 +11,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from dmxreplay.cli import play as play_cli
 from dmxreplay.cli import record as record_cli
 from dmxreplay.codec import ENCODINGS
@@ -18,6 +20,23 @@ from dmxreplay.container import DMXReplayReader, DMXReplayWriter
 from dmxreplay.dmx import CHANNELS_PER_UNIVERSE, DMXFrame, Universe
 from dmxreplay.metadata import Manifest, UniverseMapping
 from dmxreplay.network.artnet import ArtNetListener, ArtNetSender
+
+
+def _write_short_dmxr(path: str, frame_period_ns: int = 15_000_000, frame_count: int = 4) -> None:
+    frames = [
+        DMXFrame(timestamp_ns=t * frame_period_ns, universes=(Universe(channels=tuple((t * 5) % 256 for _ in range(CHANNELS_PER_UNIVERSE))),))
+        for t in range(frame_count)
+    ]
+    manifest = Manifest(
+        encoding="grayscale", fps=66.0, vfr=False, timestamp_resolution_ns=1_000_000,
+        width=ENCODINGS["grayscale"]["width"], height=1,
+        universes=[UniverseMapping.from_artnet_port_address(row=0, port_address=1)],
+        created_at="2026-08-27T00:00:00Z", duration_seconds=frame_count * frame_period_ns / 1e9,
+        recorder={"name": "dmxreplay-tests", "version": "0.1.0-dev"},
+    )
+    with DMXReplayWriter(path, manifest) as w:
+        for f in frames:
+            w.write_frame(f)
 
 
 def test_record_cli_parses_arguments():
@@ -95,21 +114,7 @@ def test_play_cli_end_to_end_over_real_artnet(tmp_path):
     """Drives dmxreplay-play's real _run() coroutine against a real .dmxr
     file, verified by a real Art-Net listener acting as the lighting rig."""
     dmxr_path = str(tmp_path / "s.dmxr")
-    frame_period_ns = 15_000_000  # 15ms/frame
-    frames = [
-        DMXFrame(timestamp_ns=t * frame_period_ns, universes=(Universe(channels=tuple((t * 5) % 256 for _ in range(CHANNELS_PER_UNIVERSE))),))
-        for t in range(4)
-    ]
-    manifest = Manifest(
-        encoding="grayscale", fps=66.0, vfr=False, timestamp_resolution_ns=1_000_000,
-        width=ENCODINGS["grayscale"]["width"], height=1,
-        universes=[UniverseMapping.from_artnet_port_address(row=0, port_address=1)],
-        created_at="2026-08-27T00:00:00Z", duration_seconds=4 * frame_period_ns / 1e9,
-        recorder={"name": "dmxreplay-tests", "version": "0.1.0-dev"},
-    )
-    with DMXReplayWriter(dmxr_path, manifest) as w:
-        for f in frames:
-            w.write_frame(f)
+    _write_short_dmxr(dmxr_path)
 
     received: list[int] = []
 
@@ -131,6 +136,112 @@ def test_play_cli_end_to_end_over_real_artnet(tmp_path):
 
     assert len(received) >= 2
     assert received == sorted(received)  # forward playback: non-decreasing
+
+
+def _write_player_config(path, **fields) -> str:
+    p = str(path)
+    with open(p, "w") as f:
+        for key, value in fields.items():
+            if isinstance(value, bool):
+                f.write(f"{key} = {'true' if value else 'false'}\n")
+            elif isinstance(value, (int, float)):
+                f.write(f"{key} = {value}\n")
+            else:
+                f.write(f'{key} = "{value}"\n')
+    return p
+
+
+def test_play_cli_config_only_no_other_flags_needed(tmp_path):
+    """dmxreplay-play --config player.toml, with no other CLI flags at all
+    -- the systemd-unit invocation shape from docs/RASPBERRY_PI.md §14/
+    docs/RASPBERRY_PI_INSTALL.md."""
+    dmxr_path = str(tmp_path / "s.dmxr")
+    _write_short_dmxr(dmxr_path)
+    received: list[int] = []
+
+    async def body():
+        listener = ArtNetListener(on_packet=lambda pkt, ip, ts: received.append(pkt.data[0]))
+        await listener.start(interface_ip="127.0.0.1", port=0)
+        rig_port = listener._transport.get_extra_info("sockname")[1]
+
+        config_path = _write_player_config(
+            tmp_path / "player.toml",
+            show=dmxr_path, output="artnet", interface="127.0.0.1",
+            destination="127.0.0.1", port=rig_port,
+        )
+        args = play_cli.build_parser().parse_args(["--config", config_path])
+        await asyncio.wait_for(play_cli._run(args), timeout=2.0)
+        listener.stop()
+
+    asyncio.run(body())
+    assert len(received) >= 2
+
+
+def test_play_cli_flag_overrides_config_value(tmp_path):
+    """An explicit --loop on the command line overrides a config file that
+    sets loop = false, per this CLI's own documented override rule."""
+    dmxr_path = str(tmp_path / "s.dmxr")
+    _write_short_dmxr(dmxr_path, frame_count=2, frame_period_ns=10_000_000)
+
+    async def body():
+        listener = ArtNetListener()
+        await listener.start(interface_ip="127.0.0.1", port=0)
+        rig_port = listener._transport.get_extra_info("sockname")[1]
+
+        config_path = _write_player_config(
+            tmp_path / "player.toml",
+            show=dmxr_path, output="artnet", interface="127.0.0.1",
+            destination="127.0.0.1", port=rig_port, loop=False,
+        )
+        args = play_cli.build_parser().parse_args(["--config", config_path, "--loop"])
+        merged = play_cli._merge_config(args, play_cli.build_parser())
+        listener.stop()
+        return merged
+
+    merged = asyncio.run(body())
+    assert merged.loop is True  # CLI --loop won over the config's loop = false
+
+
+def test_play_cli_autoplay_false_idles_without_playing(tmp_path):
+    """autoplay = false loads and configures output but never calls
+    Player.play() -- the process idles (ready for a future control surface,
+    Phase C) rather than exiting or playing anyway."""
+    dmxr_path = str(tmp_path / "s.dmxr")
+    _write_short_dmxr(dmxr_path)
+    received: list[int] = []
+
+    async def body():
+        listener = ArtNetListener(on_packet=lambda pkt, ip, ts: received.append(pkt.data[0]))
+        await listener.start(interface_ip="127.0.0.1", port=0)
+        rig_port = listener._transport.get_extra_info("sockname")[1]
+
+        config_path = _write_player_config(
+            tmp_path / "player.toml",
+            show=dmxr_path, output="artnet", interface="127.0.0.1",
+            destination="127.0.0.1", port=rig_port, autoplay=False,
+        )
+        args = play_cli.build_parser().parse_args(["--config", config_path])
+        run_task = asyncio.create_task(play_cli._run(args))
+        await asyncio.sleep(0.15)  # long enough that a playing process would have emitted something
+        run_task.cancel()  # stands in for Ctrl+C, same pattern as the record CLI test above
+        try:
+            await run_task
+        except asyncio.CancelledError:
+            pass
+        listener.stop()
+
+    asyncio.run(body())
+    assert received == []  # never played
+
+
+def test_play_cli_requires_input_or_config():
+    # No positional input, no --config, no --output: parse_args() itself
+    # accepts this (input/output are no longer required at the argparse
+    # level, so --config alone can satisfy them) -- it's _merge_config()
+    # that validates and rejects a bare invocation with neither.
+    args = play_cli.build_parser().parse_args([])
+    with pytest.raises(SystemExit):
+        play_cli._merge_config(args, play_cli.build_parser())
 
 
 def test_info_cli_subprocess_smoke_test(tmp_path):

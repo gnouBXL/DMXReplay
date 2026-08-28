@@ -120,7 +120,7 @@ same core engine and `.dmxr` format, unchanged. See
 | Phase | Scope | Status |
 |---|---|---|
 | A | Desktop GUIs (`dmxreplay.ui`, Tkinter) + Windows/macOS packaging | ✅ GUI + Linux-verified packaging; Windows/macOS build scripts written, unverified on real hardware |
-| B | Raspberry Pi ARM64/headless foundation | planned |
+| B | Raspberry Pi ARM64/headless foundation | ✅ config loader + systemd unit verified; real Pi hardware unverified |
 | C | Long-running commandable Player/Recorder service | planned |
 | D | Control API (HTTP + WebSocket) | planned |
 | E | Raspberry Pi configuration + discovery | planned |
@@ -155,6 +155,9 @@ dmxreplay-play show.dmxr --output artnet --destination 192.168.1.100 --loop
 
 # Inspect a file's manifest without playing it
 dmxreplay-info show.dmxr
+
+# Headless appliance mode: everything from a config file (docs/RASPBERRY_PI_INSTALL.md)
+dmxreplay-play --headless --config /etc/dmxreplay/player.toml
 ```
 
 All three run headless — no GUI dependency (`dmxreplay-play --headless` is accepted

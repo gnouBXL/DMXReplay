@@ -1,0 +1,49 @@
+# DMXReplay Player headless config -- docs/RASPBERRY_PI.md §14,
+# dmxreplay.config.PlayerConfig. Installed to /etc/dmxreplay/player.toml by
+# packaging/raspberrypi/install.sh; loaded by the dmxreplay-player systemd
+# service via `dmxreplay-play --headless --config /etc/dmxreplay/player.toml`.
+#
+# Only `show` is required -- every other field has the default shown here
+# (commented out) if omitted. See docs/RASPBERRY_PI_INSTALL.md for the full
+# field reference and docs/ARCHITECTURE.md for what's implemented vs. still
+# planned (there is no live-reload: change this file, then
+# `systemctl restart dmxreplay-player`).
+
+# Path to the .dmxr file to play. REQUIRED.
+show = "/var/lib/dmxreplay/shows/MyShow.dmxr"
+
+# Optional external video file, synchronized to the same master timeline
+# (docs/CONTAINER.md §7). Omit this line entirely for DMX-only playback.
+# video = "/var/lib/dmxreplay/shows/MyShow.mp4"
+
+# "artnet" or "sacn".
+# output = "artnet"
+
+# Network interface to send from -- an IP address (e.g. the Pi's Ethernet
+# IP), or "0.0.0.0" to let the OS choose.
+# interface = "0.0.0.0"
+
+# Unicast destination IP. Omit for the protocol default: Art-Net broadcast,
+# or sACN's standard per-universe multicast group (docs/SACN.md §8).
+# destination = "192.168.1.100"
+
+# UDP port. Omit for the protocol default (6454 Art-Net, 5568 sACN).
+# port = 6454
+
+# sACN sender priority, 0-200 (docs/SACN.md). Ignored for Art-Net.
+# priority = 100
+
+# Loop back to the start when the show ends.
+# loop = true
+
+# Start playing immediately once loaded. If false, the service loads the
+# show and idles (ready for a future remote-control command,
+# docs/ARCHITECTURE.md Phase C) rather than playing or exiting.
+# autoplay = true
+
+# Playback sampling rate in Hz. Omit to use the file's own nominal fps
+# (docs/TIMING.md §5).
+# fps = 30.0
+
+# Playback speed multiplier; negative plays in reverse.
+# speed = 1.0

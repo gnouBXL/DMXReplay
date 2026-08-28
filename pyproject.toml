@@ -17,7 +17,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Video",
 ]
-dependencies = []
+dependencies = [
+    # TOML parsing for dmxreplay.config (docs/RASPBERRY_PI.md §14's headless
+    # config-file loader). Python 3.11+ has this in the standard library
+    # (tomllib) -- tomli is its predecessor/backport, same API, only
+    # installed on the older Pythons this project's requires-python floor
+    # (3.10) still allows.
+    "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.optional-dependencies]
 codec = [
