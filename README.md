@@ -122,7 +122,7 @@ same core engine and `.dmxr` format, unchanged. See
 | A | Desktop GUIs (`dmxreplay.ui`, Tkinter) + Windows/macOS packaging | ✅ GUI + Linux-verified packaging; Windows/macOS build scripts written, unverified on real hardware |
 | B | Raspberry Pi ARM64/headless foundation | ✅ config loader + systemd unit verified; real Pi hardware unverified |
 | C | Long-running commandable Player/Recorder service | ✅ |
-| D | Control API (HTTP + WebSocket) | planned |
+| D | Control API (HTTP + WebSocket) | ✅ |
 | E | Raspberry Pi configuration + discovery | planned |
 | F | Mobile remote controller | planned |
 | G | Show management + file transfer | planned |
@@ -175,6 +175,19 @@ dmxreplay-recorder-gui    # DMXReplay Recorder
 See [docs/API.md](docs/API.md) §8 for what they cover and
 [docs/BUILD_AND_DISTRIBUTION.md](docs/BUILD_AND_DISTRIBUTION.md) for packaging them
 into standalone Windows/macOS apps that don't need Python installed.
+
+## Network Control API
+
+```bash
+dmxreplay-server --shows-dir /var/lib/dmxreplay/shows --enable-recorder
+```
+
+Runs an HTTP + WebSocket API for remote control (play/pause/seek/next/previous/record/
+status) — the foundation the smartphone remote controller (Phase F) talks to. The
+device's own master timeline always drives real-time playback; a connected client
+never becomes part of that loop, and playback continues unaffected if it disconnects.
+See [docs/API.md](docs/API.md) §10 for the Python side and
+[docs/MOBILE_API.md](docs/MOBILE_API.md) for the full wire protocol.
 
 ## License
 

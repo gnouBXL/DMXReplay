@@ -42,11 +42,23 @@ audio = [
     # WavFileAudioSink need neither this nor a sound card.
     "sounddevice>=0.4",
 ]
+control = [
+    # dmxreplay.control's HTTP + WebSocket network Control API (cross-
+    # platform extension Phase D, docs/API.md §10, docs/MOBILE_API.md).
+    # One library for both HTTP and WebSocket -- avoids a separate ASGI
+    # server + websockets-library combination for what's a small API
+    # surface. Confirmed (docs/ARCHITECTURE.md §1's method, applied again
+    # here) to publish prebuilt wheels for win_amd64/win_arm64, macOS
+    # (universal2), and Linux aarch64 (manylinux + musllinux) -- the same
+    # platform set this project already depends on `av` supporting.
+    "aiohttp>=3.9",
+]
 dev = [
     "pytest>=7.4",
     "jsonschema>=4.19",
     "dmxreplay[codec]",
     "dmxreplay[audio]",
+    "dmxreplay[control]",
 ]
 
 [project.scripts]
@@ -54,6 +66,7 @@ dmxreplay-record = "dmxreplay.cli.record:main"
 dmxreplay-play = "dmxreplay.cli.play:main"
 dmxreplay-info = "dmxreplay.cli.info:main"
 dmxreplay-convert = "dmxreplay.cli.convert:main"
+dmxreplay-server = "dmxreplay.cli.server:main"
 
 [project.gui-scripts]
 # gui-scripts (not scripts): on Windows this launches without an attached

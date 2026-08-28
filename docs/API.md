@@ -11,10 +11,11 @@ directly (brief §52).
 Status: everything documented here is implemented (Phases 1–9) and has an explicit
 conformance test suite (Phase 10, [`tests/test_conformance.py`](../tests/test_conformance.py),
 `docs/SPECIFICATION.md` §19–§20). `dmxreplay.ui` (§8) — the desktop Player/Recorder
-GUIs — and `dmxreplay.service` (§9) — long-running commandable services, the
-foundation the network Control API will sit on — were added in the post-V1
-cross-platform extension's Phases A and C respectively
-([docs/ARCHITECTURE.md](ARCHITECTURE.md)).
+GUIs, `dmxreplay.service` (§9) — long-running commandable services, and
+`dmxreplay.control` (§10) — the HTTP/WebSocket network Control API — were added in the
+post-V1 cross-platform extension's Phases A, C, and D respectively
+([docs/ARCHITECTURE.md](ARCHITECTURE.md); the wire protocol itself is specified in
+[MOBILE_API.md](MOBILE_API.md), written for a non-Python client implementer).
 
 ## 1. `dmxreplay.dmx` — DMX data model (implemented)
 
@@ -511,3 +512,57 @@ already-verified `Player` behavior: `load()` never touches output configuration
 sender. Both clamp at the ends of the show list (no wrap-around), matching
 `Player.seek()`/`frame_step()`'s existing clamping convention (`docs/API.md` §5)
 rather than introducing a different one here.
+
+## 10. `dmxreplay.control` — HTTP + WebSocket Control API (implemented, cross-platform extension Phase D)
+
+```python
+class ApiToken:
+    @classmethod
+    def generate(cls) -> "ApiToken": ...
+    @classmethod
+    def load_or_create(cls, path: str) -> "ApiToken": ...   # reuses an existing token across restarts
+    def matches(self, presented: str | None) -> bool: ...    # constant-time comparison
+
+class CommandRouter:
+    def __init__(self, player_service: PlayerService | None = None, recorder_service: RecorderService | None = None) -> None: ...
+    async def dispatch(self, command: str, params: dict | None = None) -> Any: ...   # raises UnknownCommandError / CommandError
+
+COMMANDS: tuple[str, ...]   # every registered command name, e.g. for introspection/tests
+
+class ControlServer:
+    def __init__(self, router: CommandRouter, token: ApiToken | None) -> None: ...
+    app: aiohttp.web.Application   # run with aiohttp.web.run_app(server.app, ...)
+```
+
+The full wire protocol (endpoints, request/response JSON shapes, authentication,
+WebSocket events, error codes, connection lifecycle, versioning) is specified in
+[MOBILE_API.md](MOBILE_API.md) — that document is written for a client implementer who
+never reads this Python code. What belongs here is the architecture:
+
+`CommandRouter` is deliberately transport-agnostic (no `aiohttp` import at all) — every
+command handler just calls a `PlayerService`/`RecorderService` method (§9). This is
+where the extension brief's "the API must not contain the real-time DMX playback loop"
+instruction is actually honored, one layer *before* the HTTP/WebSocket layer even
+exists: there is no timing/tick logic anywhere in `router.py` for a future change to
+accidentally grow one into. `ControlServer` (`server.py`) is a thin `aiohttp` wrapper —
+one HTTP `POST /api/v1/command` endpoint plus two read-only convenience `GET`s, and one
+WebSocket endpoint that dispatches through the identical router and additionally
+broadcasts `PlayerStatus` to every connected client roughly once per second (the
+real-time status push `MOBILE_API.md` §2 explains is what WebSocket is *for* here —
+not a channel for sending DMX itself).
+
+`dmxreplay-server` (`src/dmxreplay/cli/server.py`) is the process that actually runs
+this: builds a `PlayerService` (and, with `--enable-recorder`, a `RecorderService`),
+optionally auto-loads a show via `--config` (the same `dmxreplay.config.PlayerConfig`
+TOML `dmxreplay-play --config` accepts, §7/`docs/RASPBERRY_PI.md` §14), generates or
+reloads a persistent `ApiToken` (printed to stderr for pairing, `--no-auth` to disable
+for local dev only), and serves via `aiohttp.web.run_app`. `dmxreplay-play` remains the
+simpler play-straight-through CLI for one-off/scripted use; `dmxreplay-server` is what
+`docs/RASPBERRY_PI_INSTALL.md`'s headless appliance flow runs in production once the
+smartphone/mobile client (Phase F) exists to talk to it.
+
+Requires the optional `aiohttp` dependency (`pip install dmxreplay[control]`) — chosen
+over separate HTTP/WebSocket libraries because it's one dependency covering both, and
+(same verification method as `docs/ARCHITECTURE.md` §1 applied to `av`) confirmed to
+publish prebuilt wheels for Windows (amd64/arm64), macOS (universal2), and Linux
+aarch64 — the exact platform set this project already depends on for `av`.

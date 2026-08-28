@@ -6,6 +6,39 @@ format and API may still change between entries.
 
 ## [Unreleased]
 
+### Added — Cross-platform extension Phase D: Control API (HTTP + WebSocket)
+- `src/dmxreplay/control`: `CommandRouter` (transport-agnostic dispatch for all 14
+  commands the extension brief lists -- GET_STATUS/GET_SHOWS/LOAD_SHOW/PLAY/PAUSE/
+  STOP/SEEK/NEXT/PREVIOUS/RECORD_START/RECORD_STOP/GET_CONFIG/SET_CONFIG/
+  GET_NETWORK_STATUS -- calling straight into Phase C's `PlayerService`/
+  `RecorderService`, no timing logic of its own anywhere in the file); `ControlServer`
+  (`aiohttp`: one HTTP `POST /api/v1/command` plus two convenience `GET`s, one
+  WebSocket endpoint dispatching the same commands and additionally broadcasting live
+  `PlayerStatus` to every connected client roughly once per second -- the real-time
+  status push the brief specifically asks WebSocket for); `ApiToken` (bearer-token
+  auth persisted across restarts, constant-time comparison, WebSocket auth via the
+  first message rather than a query-string token to avoid it leaking into logs).
+- New `dmxreplay-server` CLI: builds the services, optionally auto-loads a show via
+  `--config` (the same `dmxreplay.config.PlayerConfig` TOML `dmxreplay-play --config`
+  already accepts), prints/persists the pairing token, serves via
+  `aiohttp.web.run_app`.
+- New `docs/MOBILE_API.md`: the full wire protocol (endpoints, request/response JSON,
+  auth, WebSocket events, error codes, connection lifecycle, versioning), written for
+  a client implementer who never reads the Python. Explicitly documents why a
+  disconnected client never affects playback -- it falls directly out of the
+  architecture (the connection was never part of the playback loop), not a special
+  case handled in code.
+- 27 new tests, all real: real HTTP/WebSocket traffic against `aiohttp`'s own test
+  server (not mocked), real Art-Net underneath to confirm PLAY actually plays, and a
+  real subprocess smoke test of the installed `dmxreplay-server` console script.
+  **A real auth bug caught on the very first test run, not by inspection**: the HTTP
+  auth middleware was rejecting the WebSocket upgrade handshake itself with 401,
+  because a WebSocket client legitimately sends no `Authorization` header (this
+  server's WS auth happens via the first message instead) -- fixed by exempting the
+  WS route from the HTTP-header check, which still doesn't skip auth, just performs
+  it the way the WS protocol actually calls for.
+- `docs/API.md` §10, `docs/ARCHITECTURE.md`, `README.md` updated.
+
 ### Added — Cross-platform extension Phase C: Long-running commandable Player/Recorder service
 - `src/dmxreplay/service`: `PlayerService`/`RecorderService` -- plain `asyncio`-native
   wrappers (no network, no GUI toolkit) around `Player`/`Recorder` that stay alive and
